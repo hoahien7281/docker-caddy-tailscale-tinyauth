@@ -100,6 +100,27 @@ jobs:
         if: always()
         run: node scripts/runners/collect-logs.mjs
 
+      - name: Analyze workflow run
+        if: always()
+        run: node scripts/runners/analyze-workflow.mjs
+
+      - name: Opencode analysis instructions
+        if: always()
+        run: |
+          echo "## 🤖 Manual Opencode Analysis" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Download logs artifact and run locally:" >> "$GITHUB_STEP_SUMMARY"
+          echo '```bash' >> "$GITHUB_STEP_SUMMARY"
+          echo "# Download artifact from this run" >> "$GITHUB_STEP_SUMMARY"
+          echo "# Extract and analyze with opencode" >> "$GITHUB_STEP_SUMMARY"
+          echo "node scripts/analyze-with-opencode.mjs" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Or manually with opencode:" >> "$GITHUB_STEP_SUMMARY"
+          echo '```bash' >> "$GITHUB_STEP_SUMMARY"
+          echo "opencode 'Analyze CI logs in ci-logs/ directory. Check for errors, suggest improvements.'" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload logs artifact
         if: always()
         uses: actions/upload-artifact@v7
