@@ -135,9 +135,8 @@ async function main() {
   try {
     opencodePath = execSync("where opencode 2>nul || which opencode 2>/dev/null", { encoding: "utf8" }).trim();
   } catch {
-    console.error("ERROR: opencode not found in PATH");
-    console.error("Install: npm install -g opencode");
-    process.exit(1);
+    log("WARN: opencode not found in PATH, skipping analysis");
+    process.exit(0);
   }
   log("Found opencode at:", opencodePath);
   

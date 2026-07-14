@@ -107,11 +107,6 @@ jobs:
         if: always()
         run: node scripts/runners/analyze-workflow.mjs
 
-      - name: Install opencode
-        if: always()
-        run: npm install -g opencode
-        continue-on-error: true
-
       - name: Analyze and report errors
         if: always()
         run: node scripts/runners/opencode-analyze.mjs
