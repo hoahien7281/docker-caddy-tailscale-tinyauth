@@ -15,9 +15,9 @@ on:
         required: false
         default: "5"
 
-concurrency:
-  group: stack-test-${{ github.ref }}
-  cancel-in-progress: true
+# concurrency:
+#   group: stack-test-${{ github.ref }}
+#   cancel-in-progress: true
 
 jobs:
   smoke:
