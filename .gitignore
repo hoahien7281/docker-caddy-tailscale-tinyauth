@@ -3,7 +3,7 @@ public-url.txt
 *.log
 ci-logs/
 ci-runtime/
-.ci-data/
+ci-data/
 .DS_Store
 tailscale-state/
 **/tailscale-state/

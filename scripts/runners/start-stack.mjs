@@ -47,12 +47,28 @@ function redactSecrets(value) {
     .replace(/("?[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASS|AUTH|KEY|COOKIE|CREDENTIAL|ACCOUNT_ID|CLIENT_ID|CLIENT_SECRET|USERS)[A-Z0-9_]*"?=)[^",\]\s]+/gi, "$1[REDACTED]");
 }
 
+function hasLitestreamConfig(envFile) {
+  return Object.keys(process.env).some((key) => /^LITESTREAM_\d+_SERVICE$/.test(key)) ||
+    (existsSync(envFile) && /^LITESTREAM_\d+_SERVICE=/m.test(readFileSync(envFile, "utf8")));
+}
+
+function ensureProfile(name, envFile) {
+  const current = process.env.COMPOSE_PROFILES || envGet(envFile, "COMPOSE_PROFILES") || "";
+  if (current.split(/[,\s]+/).includes(name) || current.split(/[,\s]+/).includes("full")) return;
+  process.env.COMPOSE_PROFILES = current ? `${current},${name}` : name;
+  log(`Ensuring ${name} profile is enabled`);
+}
+
 // chmod scripts
 try { run("bash -c 'chmod +x scripts/*.sh */scripts/*.sh 2>/dev/null || chmod +x scripts/*.sh'"); } catch {}
 
 // Show active profiles
 const envFile = resolve(ROOT, ".env");
 log("Active COMPOSE_PROFILES:", envGet(envFile, "COMPOSE_PROFILES") || "(unset)");
+if (hasLitestreamConfig(envFile)) ensureProfile("litestream", envFile);
+
+run(`node litestream/scripts/generate-config.mjs${SILENT ? " --silent" : ""}`);
+run(`node litestream/scripts/restore.mjs${SILENT ? " --silent" : ""}`);
 
 // Start stack
 if (MODE === "named") {

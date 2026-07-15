@@ -35,6 +35,7 @@ README.md                # Human-facing docs
 | ------------- | ---------------- | ------------------------- | ----------------------------- |
 | `networks/`   | `networks.yml`   | `networks/.env.example`   | Shared `proxy` network        |
 | `caddy/`      | `caddy.yml`      | `caddy/.env.example`      | Reverse proxy                 |
+| `litestream/` | `litestream.yml` | `litestream/.env.example` | SQLite restore/replication    |
 | `tinyauth/`   | `tinyauth.yml`   | `tinyauth/.env.example`   | Forward-auth login            |
 | `whoami/`     | `whoami.yml`     | `whoami/.env.example`     | Demo upstream                 |
 | `dozzle/`     | `dozzle.yml`     | `dozzle/.env.example`     | Protected Docker logs         |
@@ -159,7 +160,7 @@ const config = loadConfig();
 
 1. **Every app service is profile-gated.** No app service may run with an empty `profiles:` list. (`networks/` is infrastructure only — no service profile.)
 2. **Each service has its own named profile** equal to the service/folder intent:
-   - `caddy`, `tinyauth`, `whoami`, `cloudflare`, `tailscale`, `dozzle`, `filebrowser`, `webssh`
+   - `caddy`, `litestream`, `tinyauth`, `whoami`, `cloudflare`, `tailscale`, `dozzle`, `filebrowser`, `webssh`
 3. **Group profiles (OR membership):**
    - `core` — public path: caddy + tinyauth + whoami + cloudflare
    - `full` — everything: core members **plus** tailscale and admin tools
@@ -182,6 +183,7 @@ const config = loadConfig();
 | Profile      | Enables                                              |
 | ------------ | ---------------------------------------------------- |
 | `caddy`      | Caddy only                                           |
+| `litestream` | Litestream only                                      |
 | `tinyauth`   | Tinyauth only                                        |
 | `whoami`     | Whoami only                                          |
 | `cloudflare` | cloudflared only                                     |
@@ -195,6 +197,7 @@ const config = loadConfig();
 | Service       | Profiles on the service      |
 | ------------- | ---------------------------- |
 | `caddy`       | `caddy`, `core`, `full`      |
+| `litestream`  | `litestream`                 |
 | `tinyauth`    | `tinyauth`, `core`, `full`   |
 | `whoami`      | `whoami`, `core`, `full`     |
 | `cloudflared` | `cloudflare`, `core`, `full` |
@@ -225,6 +228,7 @@ make profiles
 docker compose \
   -f networks/networks.yml \
   -f caddy/caddy.yml \
+  -f litestream/litestream.yml \
   -f tinyauth/tinyauth.yml \
   -f whoami/whoami.yml \
   -f dozzle/dozzle.yml \
@@ -250,9 +254,17 @@ When adding a service, update **both** root `include` and this documented multi-
 
 1. Use root `.env` variables for bind-mount roots:
    - `DOCKER_VOLUME_RUNTIME` defaults to `./ci-runtime` and stores generated runtime files for all services (service state, generated config, logs, tmux/Tailscale/Caddy runtime files).
-   - `DOCKER_VOLUME_DATA` defaults to `.ci-data` and stores app data for current/future app services.
-2. Do not add new named volumes for service runtime/data. Mount under `${DOCKER_VOLUME_RUNTIME:-./ci-runtime}/<service>/...` or `${DOCKER_VOLUME_DATA:-.ci-data}/<service>/...`.
+   - `DOCKER_VOLUME_DATA` defaults to `./ci-data` and stores app data for current/future app services.
+2. Do not add new named volumes for service runtime/data. Mount under `${DOCKER_VOLUME_RUNTIME:-./ci-runtime}/<service>/...` or `${DOCKER_VOLUME_DATA:-./ci-data}/<service>/...`.
 3. Keep repo/source mounts explicit (for example `..:/srv`) and keep config-file mounts service-local (for example `./serve.json:/config/serve.json:ro`).
+
+### Litestream data sync
+
+1. Any service data managed by Litestream must live under `${DOCKER_VOLUME_DATA:-./ci-data}/litestream/<service>/`.
+2. Litestream env is indexed only: `LITESTREAM_<index>_SERVICE`, `LITESTREAM_<index>_PATH`, `LITESTREAM_<index>_URL` (or `BUCKET` + `KEY`), plus optional S3 fields like `ENDPOINT`, `REGION`, `ACCESS_KEY_ID`, `SECRET_ACCESS_KEY`, `FORCE_PATH_STYLE`.
+3. Add a new synced service by adding the next index block; do not hardcode service names into scripts.
+4. Startup must run `litestream/scripts/generate-config.mjs` then `litestream/scripts/restore.mjs` before app containers start. Helpers auto-enable the `litestream` profile when any `LITESTREAM_<index>_SERVICE` block exists. Missing remote backups are not fatal; credential/network errors are fatal.
+5. Litestream-managed app paths inside containers should match `/data/<service>/<file>.db`.
 
 ### Env injection rules (both prod and CI — do not regress)
 

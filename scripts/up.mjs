@@ -37,6 +37,18 @@ function run(cmd) {
   execSync(cmd, { stdio: SILENT ? "ignore" : "inherit", cwd: ROOT });
 }
 
+function hasLitestreamConfig() {
+  return Object.keys(process.env).some((key) => /^LITESTREAM_\d+_SERVICE$/.test(key)) ||
+    (existsSync(ENV) && /^LITESTREAM_\d+_SERVICE=/m.test(readFileSync(ENV, "utf8")));
+}
+
+function ensureProfile(name) {
+  const current = process.env.COMPOSE_PROFILES || envGet(ENV, "COMPOSE_PROFILES") || "";
+  if (current.split(/[,\s]+/).includes(name) || current.split(/[,\s]+/).includes("full")) return;
+  process.env.COMPOSE_PROFILES = current ? `${current},${name}` : name;
+  log(`Ensuring ${name} profile is enabled`);
+}
+
 // Validate .env
 if (!existsSync(".env")) {
   console.error("Missing .env — copy .env.example and fill secrets:");
@@ -81,7 +93,12 @@ if (envGet(ENV, "TS_AUTHKEY")) {
   }
 }
 
+if (hasLitestreamConfig()) ensureProfile("litestream");
+
 // Start stack
+run(`node litestream/scripts/generate-config.mjs${SILENT ? " --silent" : ""}`);
+run(`node litestream/scripts/restore.mjs${SILENT ? " --silent" : ""}`);
+
 if (mode === "ci") {
   log("Starting stack in CI / quick-tunnel mode...");
   run(dockerCmd("compose -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans"));

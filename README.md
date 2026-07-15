@@ -18,6 +18,7 @@ Tailnet  ──► Tailscale Serve ──► Caddy   (optional private access)
 |------|------|
 | `networks/networks.yml` | Shared `proxy` bridge network |
 | `caddy/caddy.yml` + `caddy/scripts/` | Reverse proxy (`caddy-docker-proxy`) |
+| `litestream/litestream.yml` + `litestream/scripts/` | SQLite restore/replication |
 | `tinyauth/tinyauth.yml` + `tinyauth/scripts/` | Forward-auth login UI |
 | `whoami/whoami.yml` | Demo upstream app |
 | `dozzle/dozzle.yml` | Protected Docker log viewer |
@@ -59,7 +60,7 @@ COMPOSE_PROFILES=core,tailscale docker compose up -d
 |---------|----------|
 | `core` | caddy, tinyauth, whoami, cloudflare |
 | `full` | core + tailscale + dozzle + filebrowser + webssh |
-| `caddy` / `tinyauth` / `whoami` / `cloudflare` / `tailscale` / `dozzle` / `filebrowser` / `webssh` | từng service |
+| `caddy` / `litestream` / `tinyauth` / `whoami` / `cloudflare` / `tailscale` / `dozzle` / `filebrowser` / `webssh` | từng service |
 
 Set in `.env`:
 
@@ -125,6 +126,7 @@ Root `.env.example` = minimal keys the compose files actually use.
 |---------|---------|
 | [`cloudflare/.env.example`](cloudflare/.env.example) | `TUNNEL_*`, protocol, loglevel, token |
 | [`caddy/.env.example`](caddy/.env.example) | ports, `CADDY_DOCKER_*`, ingress networks |
+| [`litestream/.env.example`](litestream/.env.example) | indexed `LITESTREAM_<index>_*` S3 sync blocks |
 | [`tinyauth/.env.example`](tinyauth/.env.example) | all `TINYAUTH_*` v5 groups |
 | [`whoami/.env.example`](whoami/.env.example) | `WHOAMI_HOST` / labels |
 | [`dozzle/.env.example`](dozzle/.env.example) | `DOZZLE_HOST` / labels |
@@ -152,7 +154,29 @@ Do **not** copy blank lines like `TINYAUTH_SERVER_SOCKETPATH=` — empty optiona
 | `WEBSSH_HOSTS` | Caddy sites for protected ttyd/tmux terminal |
 | `TS_AUTHKEY` | Tailscale auth key (profile `tailscale`) |
 | `DOCKER_VOLUME_RUNTIME` | Bind-mount root for generated runtime files, defaults `./ci-runtime` |
-| `DOCKER_VOLUME_DATA` | Bind-mount root for app data, defaults `.ci-data` |
+| `DOCKER_VOLUME_DATA` | Bind-mount root for app data, defaults `./ci-data` |
+
+### Litestream data sync
+
+Litestream is optional. If no `LITESTREAM_<index>_*` block exists, startup skips
+restore and the Litestream container idles. Any app using Litestream must store
+its SQLite data under `${DOCKER_VOLUME_DATA}/litestream/<service>/`.
+
+```env
+LITESTREAM_0_SERVICE=tinyauth
+LITESTREAM_0_PATH=/data/tinyauth/tinyauth.db
+LITESTREAM_0_URL=s3://bucket/path/tinyauth.db
+LITESTREAM_0_ACCESS_KEY_ID=...
+LITESTREAM_0_SECRET_ACCESS_KEY=...
+LITESTREAM_0_ENDPOINT=https://project-ref.supabase.co/storage/v1/s3
+LITESTREAM_0_REGION=auto
+LITESTREAM_0_FORCE_PATH_STYLE=true
+```
+
+Startup helpers auto-enable the `litestream` profile when a `LITESTREAM_*`
+block exists, generate `ci-runtime/litestream/litestream.yml`, restore any
+missing local DB from S3 if present, then start containers. If S3 has no backup
+yet, the app creates the DB and Litestream replicates it afterward.
 
 ## Cloudflare named tunnel setup
 
@@ -222,6 +246,7 @@ Workflow: `.github/workflows/test.yml`
 docker compose \
   -f networks/networks.yml \
   -f caddy/caddy.yml \
+  -f litestream/litestream.yml \
   -f tinyauth/tinyauth.yml \
   -f whoami/whoami.yml \
   -f cloudflare/cloudflare.yml \

@@ -2,19 +2,19 @@
 
 # Uses COMPOSE_PROFILES from .env (default in .env.example: core)
 up:
-	docker compose up -d --remove-orphans
+	node scripts/up.mjs
 
 up-core:
-	COMPOSE_PROFILES=core docker compose up -d --remove-orphans
+	node scripts/up.mjs core
 
 up-full:
-	COMPOSE_PROFILES=full docker compose up -d --remove-orphans
+	node scripts/up.mjs full
 
 up-ts:
-	COMPOSE_PROFILES=core,tailscale docker compose up -d --remove-orphans
+	node scripts/up.mjs core tailscale
 
 up-ci:
-	COMPOSE_PROFILES=core docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans
+	node scripts/up.mjs ci core
 
 down:
 	docker compose down --remove-orphans

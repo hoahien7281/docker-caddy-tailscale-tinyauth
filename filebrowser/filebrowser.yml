@@ -40,7 +40,7 @@ services:
       - --noauth
     volumes:
       - ..:/srv
-      - ${DOCKER_VOLUME_DATA:-.ci-data}/filebrowser:/database
+      - ${DOCKER_VOLUME_DATA:-./ci-data}/filebrowser:/database
     networks:
       - proxy
     labels:

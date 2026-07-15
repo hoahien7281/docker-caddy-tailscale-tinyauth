@@ -1,0 +1,40 @@
+# =============================================================================
+# litestream/litestream.yml — SQLite backup/restore sidecar
+# =============================================================================
+#
+# Purpose:
+#   Replicate SQLite files under DOCKER_VOLUME_DATA/litestream/<service>/ to S3.
+#   Pre-start restore is handled by litestream/scripts/restore.mjs.
+#
+# Docs:
+#   - Litestream: https://litestream.io/
+#   - S3 replicas: https://litestream.io/reference/config/#s3-replica
+#
+# Env/catalog:
+#   - litestream/.env.example
+#   - Indexed vars: LITESTREAM_<index>_*
+#
+# Profiles: litestream
+# =============================================================================
+
+services:
+  litestream:
+    image: ${LITESTREAM_IMAGE:-litestream/litestream:0.3.13}
+    container_name: litestream
+    restart: unless-stopped
+    env_file:
+      - path: ../.env
+        required: false
+      - path: .env
+        required: false
+    command:
+      - replicate
+      - -config
+      - /etc/litestream/litestream.yml
+    volumes:
+      - ${DOCKER_VOLUME_DATA:-./ci-data}/litestream:/data
+      - ${DOCKER_VOLUME_RUNTIME:-./ci-runtime}/litestream:/etc/litestream:ro
+    networks:
+      - proxy
+    profiles:
+      - litestream

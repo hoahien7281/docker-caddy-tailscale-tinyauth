@@ -16,7 +16,7 @@
 #   - Quy tắc dự án: AGENTS.md | README.md
 #
 # Profiles — bật/tắt service (COMPOSE_PROFILES trong .env):
-#   Riêng: caddy | tinyauth | whoami | cloudflare | tailscale
+#   Riêng: caddy | litestream | tinyauth | whoami | cloudflare | tailscale
 #   Nhóm:  core (= public stack) | full (= core + tailscale)
 #   Mặc định khuyến nghị: COMPOSE_PROFILES=core
 #   Docs: https://docs.docker.com/compose/how-tos/profiles/
@@ -34,6 +34,7 @@
 #   docker compose \
 #     -f networks/networks.yml \
 #     -f caddy/caddy.yml \
+#     -f litestream/litestream.yml \
 #     -f tinyauth/tinyauth.yml \
 #     -f whoami/whoami.yml \
 #     -f dozzle/dozzle.yml \
@@ -57,6 +58,7 @@ name: proxy-stack
 include:
   - path: ./networks/networks.yml
   - path: ./caddy/caddy.yml
+  - path: ./litestream/litestream.yml
   - path: ./tinyauth/tinyauth.yml
   - path: ./whoami/whoami.yml
   - path: ./dozzle/dozzle.yml

@@ -32,11 +32,11 @@ services:
       TINYAUTH_APPURL: ${TINYAUTH_APPURL:-http://auth.${DOMAIN:-localhost}}
       TINYAUTH_AUTH_USERS: ${TINYAUTH_AUTH_USERS:?Set TINYAUTH_AUTH_USERS in .env}
       TINYAUTH_AUTH_SECURECOOKIE: ${TINYAUTH_AUTH_SECURECOOKIE:-false}
-      TINYAUTH_DATABASE_PATH: ${TINYAUTH_DATABASE_PATH:-/data/tinyauth.db}
+      TINYAUTH_DATABASE_PATH: ${TINYAUTH_DATABASE_PATH:-/data/tinyauth/tinyauth.db}
       TINYAUTH_ANALYTICS_ENABLED: ${TINYAUTH_ANALYTICS_ENABLED:-false}
       TINYAUTH_LOG_LEVEL: ${TINYAUTH_LOG_LEVEL:-info}
     volumes:
-      - ${DOCKER_VOLUME_DATA:-.ci-data}/tinyauth:/data
+      - ${DOCKER_VOLUME_DATA:-./ci-data}/litestream/tinyauth:/data/tinyauth
     networks:
       - proxy
     labels:

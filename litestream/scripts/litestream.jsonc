@@ -1,0 +1,8 @@
+{
+  // Default Litestream image used by helper scripts.
+  "image": "litestream/litestream:0.3.13",
+
+  // Root-relative fallback locations.
+  "runtime_root": "ci-runtime",
+  "data_root": "./ci-data/litestream"
+}
