@@ -6,6 +6,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { detectDocker, dockerCmd } from "./runners/_docker.mjs";
+import { envGet } from "./lib/env-utils.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
@@ -13,6 +14,8 @@ process.chdir(ROOT);
 
 const docker = detectDocker();
 if (!docker.available) { console.error("ERROR: Docker not found."); process.exit(1); }
+
+const ENV = resolve(ROOT, ".env");
 
 const TIMEOUT = parseInt(process.env.TEST_TIMEOUT || "180", 10);
 const INTERVAL = 5;
@@ -30,12 +33,6 @@ function httpCode(url) {
     }).toString().trim();
     return /^\d{3}$/.test(code) ? code : "000";
   } catch { return "000"; }
-}
-
-function envGet(key) {
-  if (!existsSync(".env")) return "";
-  const m = readFileSync(".env", "utf8").match(new RegExp(`^${key}=(.+)$`, "m"));
-  return m ? m[1].replace(/^["']|["']$/g, "") : "";
 }
 
 // ── Wait for core containers ─────────────────────────────────────
@@ -88,9 +85,9 @@ if (!localOk) {
 let publicUrl = process.env.PUBLIC_URL || "";
 
 if (!publicUrl) {
-  const tunnelToken = envGet("TUNNEL_TOKEN");
-  const whoamiHost = envGet("WHOAMI_HOST");
-  const domain = envGet("DOMAIN");
+  const tunnelToken = envGet(ENV, "TUNNEL_TOKEN");
+  const whoamiHost = envGet(ENV, "WHOAMI_HOST");
+  const domain = envGet(ENV, "DOMAIN");
 
   if (tunnelToken) {
     if (whoamiHost) {

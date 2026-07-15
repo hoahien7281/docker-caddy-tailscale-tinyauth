@@ -94,3 +94,4 @@ coverage/
 .git-o-config
 .opushforce.message
 .opencode-prompt.md
+.env.dockercaddytailscaletinyauth

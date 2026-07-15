@@ -11,6 +11,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { detectDocker, dockerCmd } from "./_docker.mjs";
+import { envGet } from "../lib/env-utils.mjs";
 
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes("--dry-run");
@@ -44,9 +45,8 @@ function sh(cmd) {
 try { run("bash -c 'chmod +x scripts/*.sh */scripts/*.sh 2>/dev/null || chmod +x scripts/*.sh'"); } catch {}
 
 // Show active profiles
-const env = existsSync(resolve(ROOT, ".env")) ? readFileSync(resolve(ROOT, ".env"), "utf8") : "";
-const m = env.match(/^COMPOSE_PROFILES=(.+)$/m);
-log("Active COMPOSE_PROFILES:", m ? m[1] : "(unset)");
+const envFile = resolve(ROOT, ".env");
+log("Active COMPOSE_PROFILES:", envGet(envFile, "COMPOSE_PROFILES") || "(unset)");
 
 // Start stack
 if (MODE === "named") {

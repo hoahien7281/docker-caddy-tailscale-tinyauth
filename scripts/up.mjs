@@ -17,6 +17,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { detectDocker, dockerCmd } from "./runners/_docker.mjs";
+import { envGet } from "./lib/env-utils.mjs";
 
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes("--dry-run");
@@ -25,6 +26,7 @@ const log = (...a) => { if (!SILENT) console.log(...a); };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
+const ENV = resolve(ROOT, ".env");
 process.chdir(ROOT);
 
 const docker = detectDocker();
@@ -33,11 +35,6 @@ if (!docker.available) { console.error("ERROR: Docker not found."); process.exit
 function run(cmd) {
   if (DRY_RUN) { log(`[DRY RUN] ${cmd}`); return; }
   execSync(cmd, { stdio: SILENT ? "ignore" : "inherit", cwd: ROOT });
-}
-function envGet(key) {
-  if (!existsSync(".env")) return "";
-  const m = readFileSync(".env", "utf8").match(new RegExp(`^${key}=(.+)$`, "m"));
-  return m ? m[1].replace(/^["']|["']$/g, "") : "";
 }
 
 // Validate .env
@@ -64,7 +61,7 @@ if (nonFlagArgs.length > 0) {
   process.env.COMPOSE_PROFILES = nonFlagArgs.join(" ");
   log(`Forcing COMPOSE_PROFILES=${process.env.COMPOSE_PROFILES}`);
 } else {
-  const current = envGet("COMPOSE_PROFILES");
+  const current = envGet(ENV, "COMPOSE_PROFILES");
   if (current) {
     log(`Using COMPOSE_PROFILES from .env: ${current}`);
   } else {
@@ -74,8 +71,8 @@ if (nonFlagArgs.length > 0) {
 }
 
 // Auto-add tailscale if TS_AUTHKEY present
-if (envGet("TS_AUTHKEY")) {
-  const current = process.env.COMPOSE_PROFILES || envGet("COMPOSE_PROFILES") || "";
+if (envGet(ENV, "TS_AUTHKEY")) {
+  const current = process.env.COMPOSE_PROFILES || envGet(ENV, "COMPOSE_PROFILES") || "";
   if (!current.includes("full") && !current.includes("tailscale")) {
     if (process.env.COMPOSE_PROFILES) {
       process.env.COMPOSE_PROFILES += ",tailscale";

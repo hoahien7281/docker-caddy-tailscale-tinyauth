@@ -99,6 +99,10 @@ Rules:
 - `--dry-run` implies no writes to `.env`, `GITHUB_ENV`, or any file.
 - `--silent` suppresses stdout only; `console.error` always prints.
 
+### Syntax check — bắt buộc sau khi viết/sửa `.mjs`/`.js`
+
+Sau khi viết hoặc sửa bất kỳ file `.mjs`/`.js` nào, **PHẢI** chạy `node --check <file>` trước khi coi task là done. Nếu lỗi thì tự sửa và check lại, tối đa 3 lần.
+
 ### Script config — extract hardcoded values to `.jsonc`
 
 **Do not** hardcode lists, paths, or config values inside `.mjs` scripts. Extract to a `.jsonc` file in the same directory.
@@ -244,6 +248,33 @@ These rules apply to **full named-tunnel config** and **quick-tunnel CI** alike.
    `env_file` loads every `KEY=` line. Prefer root `.env.example` (minimal) and copy **only** keys you set.
 
 3. **Tinyauth-only keys for the process** must be documented `TINYAUTH_*`. Hostnames for Caddy labels use `TINYAUTH_HOST` / `CADDY_TINYAUTH_HOST` / `WHOAMI_HOST` — never invent process env for labels.
+
+### .env parsing — use dotenv, not regex
+
+Every `.mjs` script that reads values from `.env` **must** use `dotenv.parse()` (via the shared `scripts/lib/env-utils.mjs` helper). Do **not** hand-roll regex like `/^KEY=(.+)$/m`.
+
+**Why:** regex does NOT strip inline `# comment` suffixes from unquoted values. Example:
+
+```
+CF_API_KEY=abcd1234  # my key
+```
+
+- `dotenv.parse` → `"abcd1234"` (correct)
+- regex → `"abcd1234  # my key"` (wrong — causes Cloudflare 6003/6103)
+
+`dotenv.parse` also handles quoted values, escape sequences, multi-line values, and empty lines per the standard `.env` spec that Docker Compose, dotenv-cli, and other tools follow.
+
+**Usage:**
+
+```js
+import { parseEnv, envGet, envHasKey, envKeys } from "./lib/env-utils.mjs";   // from scripts/
+import { parseEnv, envGet, envHasKey, envKeys } from "../../scripts/lib/env-utils.mjs"; // from service scripts/
+```
+
+- `parseEnv(filePath)` → `{ KEY: "value", ... }`
+- `envGet(filePath, key)` → `"value"` or `""`
+- `envHasKey(filePath, key)` → `true` / `false`
+- `envKeys(filePath)` → `["KEY1", "KEY2", ...]`
 
 ### Tinyauth v5 (strict)
 
@@ -405,4 +436,5 @@ vs quick modes in AGENTS.md and README.
 - [ ] Env vars documented; Tinyauth keys valid for v5
 - [ ] Root `.env.example` / `.env.ci` set `COMPOSE_PROFILES` appropriately
 - [ ] README and AGENTS.md still accurate
+- [ ] Sau khi viết/sửa file `.mjs`/`.js`, **đã chạy `node --check <file>`** trước khi coi task là done; nếu lỗi thì tự sửa và check lại, tối đa 3 lần
 - [ ] **Đã ghi nội dung cập nhật vào `.git/.git-o-commit-template`** (sẵn sàng user `git commit` không `-m`)

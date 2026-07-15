@@ -12,6 +12,7 @@ import { appendFileSync, copyFileSync, existsSync, readFileSync, writeFileSync }
 import { execSync } from "node:child_process";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { envGet, envHasKey, envKeys } from "../lib/env-utils.mjs";
 
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes("--dry-run");
@@ -31,25 +32,10 @@ function appendEnv(key, val) {
   log(`[env] ${key}=${val}`);
 }
 
-function envKeys() {
-  if (!existsSync(ENV)) return;
-  const keys = readFileSync(ENV, "utf8")
-    .split("\n")
-    .filter((l) => l && !l.startsWith("#") && l.includes("="))
-    .map((l) => l.split("=")[0]);
+function showEnvKeys() {
+  const keys = envKeys(ENV);
   log("--- .env keys ---");
   keys.forEach((k) => log(k));
-}
-
-function envGet(key) {
-  if (!existsSync(ENV)) return "";
-  const m = readFileSync(ENV, "utf8").match(new RegExp(`^${key}=(.+)$`, "m"));
-  return m ? m[1].replace(/^["']|["']$/g, "") : "";
-}
-
-function envHasKey(key) {
-  if (!existsSync(ENV)) return false;
-  return new RegExp(`^${key}=.+`, "m").test(readFileSync(ENV, "utf8"));
 }
 
 function envAppend(line) {
@@ -63,7 +49,7 @@ if (DRY_RUN) {
 } else if (ENV_FILE) {
   writeFileSync(ENV, ENV_FILE + "\n");
   log("Wrote .env from secrets.ENV_FILE");
-  if (envHasKey("TUNNEL_TOKEN")) {
+  if (envHasKey(ENV, "TUNNEL_TOKEN")) {
     appendEnv("MODE", "named");
     log("Named Cloudflare tunnel mode (TUNNEL_TOKEN set)");
   } else {
@@ -75,29 +61,29 @@ if (DRY_RUN) {
   appendEnv("MODE", "quick");
   log("secrets.ENV_FILE not set — using .env.ci + quick tunnel");
 }
-envKeys();
+showEnvKeys();
 
 // 2. Ensure required Tinyauth vars for quick mode
-if (!ENV_FILE || !envHasKey("TUNNEL_TOKEN")) {
-  if (!envHasKey("TINYAUTH_AUTH_USERS")) {
+if (!ENV_FILE || !envHasKey(ENV, "TUNNEL_TOKEN")) {
+  if (!envHasKey(ENV, "TINYAUTH_AUTH_USERS")) {
     if (!DRY_RUN) envAppend('TINYAUTH_AUTH_USERS=user:$$2a$$10$$UdLYoJ5lgPsC0RKqYH/jMua7zIn0g9kPqWmhYayJYLaZQ/FTmH2/u');
     log("[env] Added TINYAUTH_AUTH_USERS (demo)");
   }
-  if (!envHasKey("TINYAUTH_AUTH_SECURECOOKIE")) {
+  if (!envHasKey(ENV, "TINYAUTH_AUTH_SECURECOOKIE")) {
     if (!DRY_RUN) envAppend("TINYAUTH_AUTH_SECURECOOKIE=false");
     log("[env] Added TINYAUTH_AUTH_SECURECOOKIE=false");
   }
 }
 
 // 3. Ensure COMPOSE_PROFILES
-if (!envHasKey("COMPOSE_PROFILES")) {
+if (!envHasKey(ENV, "COMPOSE_PROFILES")) {
   if (!DRY_RUN) envAppend("COMPOSE_PROFILES=core");
   log("Added COMPOSE_PROFILES=core");
 } else {
-  log("COMPOSE_PROFILES already set:", envGet("COMPOSE_PROFILES"));
+  log("COMPOSE_PROFILES already set:", envGet(ENV, "COMPOSE_PROFILES"));
 }
-if (envHasKey("TS_AUTHKEY") && !/full|tailscale/.test(envGet("COMPOSE_PROFILES"))) {
-  const cur = envGet("COMPOSE_PROFILES");
+if (envHasKey(ENV, "TS_AUTHKEY") && !/full|tailscale/.test(envGet(ENV, "COMPOSE_PROFILES"))) {
+  const cur = envGet(ENV, "COMPOSE_PROFILES");
   if (!DRY_RUN) {
     const src = readFileSync(ENV, "utf8").replace(
       /^COMPOSE_PROFILES=.*$/m,
@@ -110,5 +96,5 @@ if (envHasKey("TS_AUTHKEY") && !/full|tailscale/.test(envGet("COMPOSE_PROFILES")
 
 // 4. Summary
 if (GITHUB_STEP_SUMMARY) {
-  appendFileSync(GITHUB_STEP_SUMMARY, `## Environment\n\n- Mode: ${ENV_FILE && envHasKey("TUNNEL_TOKEN") ? "named" : "quick"}\n- Profiles: ${envGet("COMPOSE_PROFILES")}\n\n`);
+  appendFileSync(GITHUB_STEP_SUMMARY, `## Environment\n\n- Mode: ${ENV_FILE && envHasKey(ENV, "TUNNEL_TOKEN") ? "named" : "quick"}\n- Profiles: ${envGet(ENV, "COMPOSE_PROFILES")}\n\n`);
 }

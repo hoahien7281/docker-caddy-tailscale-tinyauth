@@ -14,11 +14,14 @@
     "ps": "docker compose ps",
     "config": "docker compose config",
     "tunnel-url": "node cloudflare/scripts/extract-tunnel-url.mjs",
-    "provision": "node cloudflare/scripts/provision-tunnel.mjs",
+    "provision": "node cloudflare/scripts/provision-tunnel.mjs --env .env.dockercaddytailscaletinyauth",
     "ts-status": "node tailscale/scripts/status.mjs"
   },
   "devDependencies": {
     "bcryptjs": "^2.4.3",
     "jsonc-parser": "^3.3.1"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2"
   }
 }
