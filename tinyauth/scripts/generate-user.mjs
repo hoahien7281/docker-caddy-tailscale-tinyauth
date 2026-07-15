@@ -6,7 +6,9 @@
 //   node tinyauth/scripts/generate-user.mjs                    # interactive
 //   node tinyauth/scripts/generate-user.mjs --silent -u user -p pass
 //   node tinyauth/scripts/generate-user.mjs --dry-run          # show hash only
+//   node tinyauth/scripts/generate-user.mjs --env path/to/.env # update TINYAUTH_AUTH_USERS in file
 import { createInterface } from "node:readline";
+import { readFileSync, writeFileSync } from "node:fs";
 
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes("--dry-run");
@@ -14,6 +16,7 @@ const SILENT = args.includes("--silent");
 const flagVal = (f) => { const i = args.indexOf(f); return i !== -1 ? args[i + 1] : ""; };
 const cliUser = flagVal("-u");
 const cliPass = flagVal("-p");
+const envPath = flagVal("--env");
 
 async function ask(question) {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -74,14 +77,38 @@ if (!hash) {
 }
 
 const composeHash = hash.replace(/\$/g, "$$$$");
+const entry = `TINYAUTH_AUTH_USERS=${user}:${composeHash}`;
+
+function updateEnvFile(filePath, line) {
+  const content = readFileSync(filePath, "utf8");
+  const lines = content.split("\n");
+  const idx = lines.findIndex((l) => /^TINYAUTH_AUTH_USERS\s*=/.test(l));
+  if (idx !== -1) {
+    lines[idx] = line;
+  } else {
+    let lastTinyauth = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (/^TINYAUTH_/.test(lines[i])) lastTinyauth = i;
+    }
+    if (lastTinyauth !== -1) {
+      lines.splice(lastTinyauth + 1, 0, line);
+    } else {
+      if (lines.length && lines[lines.length - 1] === "") lines.pop();
+      lines.push(line);
+    }
+  }
+  writeFileSync(filePath, lines.join("\n"));
+}
 
 if (DRY_RUN) {
   console.log(`[DRY RUN] ${user}:${hash}`);
+  if (envPath) console.log(`[DRY RUN] Would update ${envPath}: ${entry}`);
   process.exit(0);
 }
 
 if (SILENT) {
   console.log(`${user}:${composeHash}`);
+  if (envPath) updateEnvFile(envPath, entry);
   process.exit(0);
 }
 
@@ -97,3 +124,8 @@ Raw (for non-Compose use):
 If the hash contains $ characters, double them ($$) in .env
 so Docker Compose keeps a single $ in the container.
 `);
+
+if (envPath) {
+  updateEnvFile(envPath, entry);
+  console.log(`Updated ${envPath}: TINYAUTH_AUTH_USERS=${user}:<hash>`);
+}

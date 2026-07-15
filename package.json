@@ -4,7 +4,7 @@
   "private": true,
   "description": "Modular Docker reverse-proxy stack: Cloudflare Tunnel, Tailscale, Caddy, Tinyauth",
   "scripts": {
-    "user": "node tinyauth/scripts/generate-user.mjs",
+    "user": "node tinyauth/scripts/generate-user.mjs --env .env.dockercaddytailscaletinyauth",
     "user:docker": "docker run --rm -it ghcr.io/steveiliop56/tinyauth:v5 user create --interactive",
     "up": "docker compose up -d --remove-orphans",
     "up:core": "COMPOSE_PROFILES=core docker compose up -d --remove-orphans",
