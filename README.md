@@ -38,7 +38,7 @@ Tailnet  ──► Tailscale Serve ──► Caddy   (optional private access)
 
 ```bash
 cp .env.example .env
-# edit .env — COMPOSE_PROFILES, TUNNEL_TOKEN, DOMAIN, TINYAUTH_* hosts
+# edit .env — COMPOSE_PROFILES, CF_TUNNEL_TOKEN, DOMAIN, TINYAUTH_* hosts
 
 docker compose up -d                    # uses COMPOSE_PROFILES from .env (default: core)
 
@@ -110,7 +110,7 @@ If `ENV_FILE` is missing (e.g. fork PRs), CI falls back to `.env.ci` and a **Clo
 
 | CI mode | When | Compose | Public URL | Whoami auth |
 |---------|------|---------|------------|-------------|
-| **Named** | `ENV_FILE` has non-empty `TUNNEL_TOKEN` | `docker compose up` | `WHOAMI_HOST` / `whoami.$DOMAIN` (https) | On (forward-auth) — **302/401 is success** |
+| **Named** | `ENV_FILE` has non-empty `CF_TUNNEL_TOKEN` | `docker compose up` | `WHOAMI_HOST` / `whoami.$DOMAIN` (https) | On (forward-auth) — **302/401 is success** |
 | **Quick** | no secret or empty token | `+ docker-compose.ci.yml` | `*.trycloudflare.com` | Off (catch-all `:80`) |
 
 ### Per-service env catalogs
@@ -135,7 +135,7 @@ Do **not** copy blank lines like `TINYAUTH_SERVER_SOCKETPATH=` — empty optiona
 | Variable | Purpose |
 |----------|---------|
 | `DOMAIN` | Base domain for default hostnames |
-| `TUNNEL_TOKEN` | Cloudflare named tunnel token |
+| `CF_TUNNEL_TOKEN` | Cloudflare named tunnel token |
 | `TINYAUTH_APPURL` | Public login URL (https) |
 | `TINYAUTH_HOST` | Caddy site label (usually `http://auth.…`) |
 | `TINYAUTH_AUTH_USERS` | `user:bcrypt` (use `$$` for `$` in Compose) |
@@ -146,7 +146,7 @@ Do **not** copy blank lines like `TINYAUTH_SERVER_SOCKETPATH=` — empty optiona
 ## Cloudflare named tunnel setup
 
 1. Zero Trust → **Networks** → **Tunnels** → Create a tunnel (Cloudflared).
-2. Copy the tunnel **token** into `TUNNEL_TOKEN`.
+2. Copy the tunnel **token** into `CF_TUNNEL_TOKEN`.
 3. Add **Public hostnames** (service URL for all of them):
 
    | Public hostname | Service |
@@ -183,7 +183,7 @@ Workflow: `.github/workflows/test.yml`
    - `curl` **without** `-L` (does not follow login redirects)
    - accepts HTTP **200 / 301 / 302 / 307 / 401 / 403** as “reachable”
 
-**Full production-like secret:** put a complete root `.env` in `ENV_FILE` (including `TUNNEL_TOKEN`, public `TINYAUTH_APPURL`, `WHOAMI_HOST`, hostnames on the Cloudflare tunnel). Smoke success with auth still on is typically **302** (redirect to login) or **401**, not necessarily 200.
+**Full production-like secret:** put a complete root `.env` in `ENV_FILE` (including `CF_TUNNEL_TOKEN`, public `TINYAUTH_APPURL`, `WHOAMI_HOST`, hostnames on the Cloudflare tunnel). Smoke success with auth still on is typically **302** (redirect to login) or **401**, not necessarily 200.
 
 ## Multi-file compose without `include`
 

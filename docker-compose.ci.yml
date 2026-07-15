@@ -2,7 +2,7 @@
 # docker-compose.ci.yml — override cho CI / smoke test (quick tunnel)
 # =============================================================================
 #
-# Dùng khi không có TUNNEL_TOKEN / secrets.ENV_FILE:
+# Dùng khi không có CF_TUNNEL_TOKEN / secrets.ENV_FILE:
 #   docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
 #
 # - cloudflared: TryCloudflare (--url), ép HTTP/2 (UDP/QUIC hay lỗi trên GHA)
@@ -28,8 +28,8 @@ services:
       - http://caddy:80
     environment:
       # Quick tunnel must not see a token (empty string can still confuse some versions)
-      TUNNEL_TOKEN: ""
-      TUNNEL_TOKEN_FILE: ""
+      CF_TUNNEL_TOKEN: ""
+      CF_TUNNEL_TOKEN_FILE: ""
       TUNNEL_TRANSPORT_PROTOCOL: http2
       TUNNEL_EDGE_IP_VERSION: "4"
       TUNNEL_LOGLEVEL: info

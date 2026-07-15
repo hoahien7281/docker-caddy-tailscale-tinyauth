@@ -108,7 +108,7 @@ Script sẽ:
 3. Fetch tunnel token
 4. Cấu hình ingress (hostnames → http://caddy:80)
 5. Tạo DNS CNAME records
-6. Lưu tất cả vào `.env` (CF_ZONE_ID, CF_TUNNEL_ID, CF_TUNNEL_TOKEN, ...)
+6. Lưu tất cả vào `.env` (CF_ZONE_ID, CF_TUNNEL_ID, CF_CF_TUNNEL_TOKEN, ...)
 
 Chạy lại script nhiều lần cũng an toàn — nó skip tạo mới nếu đã có trong `.env`.
 
@@ -144,9 +144,9 @@ Sau khi chạy provision, các biến sau sẽ có trong `.env`:
 | `CF_ZONE_ID` | Zone ID (tự tra theo DOMAIN) |
 | `CF_TUNNEL_NAME` | Tên tunnel (`{DOMAIN}-tunnel`) |
 | `CF_TUNNEL_ID` | Tunnel ID (UUID) |
-| `CF_TUNNEL_TOKEN` | Token để cloudflared connect |
+| `CF_CF_TUNNEL_TOKEN` | Token để cloudflared connect |
 
-Các biến này dùng được cho `TUNNEL_TOKEN` trong compose (hoặc script tự map).
+Các biến này dùng được cho `CF_TUNNEL_TOKEN` trong compose (hoặc script tự map).
 
 ## Troubleshooting
 

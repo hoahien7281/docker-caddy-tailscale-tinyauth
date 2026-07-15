@@ -37,7 +37,7 @@ while (Date.now() < deadline) {
   }
 
   // Fail fast if named-tunnel mode detected
-  if (/TUNNEL_TOKEN|must specify|failed to create|error parsing tunnel|provided tunnel token/i.test(logs)) {
+  if (/CF_TUNNEL_TOKEN|must specify|failed to create|error parsing tunnel|provided tunnel token/i.test(logs)) {
     if (!/trycloudflare|Requesting new quick Tunnel/i.test(logs)) {
       console.error("ERROR: cloudflared does not look like quick-tunnel mode (still named/token?)");
       console.error(logs.split("\n").slice(-40).join("\n"));

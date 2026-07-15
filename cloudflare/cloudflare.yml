@@ -4,7 +4,7 @@
 #
 # Mục đích trong dự án:
 #   Chạy cloudflared để expose stack ra ngoài mà không mở port firewall.
-#   Prod: named tunnel với TUNNEL_TOKEN; dashboard trỏ Public Hostname
+#   Prod: named tunnel với CF_TUNNEL_TOKEN; dashboard trỏ Public Hostname
 #   về http://caddy:80. CI: docker-compose.ci.yml dùng quick tunnel.
 #
 # Env — thứ tự ưu tiên (Compose):
@@ -38,8 +38,8 @@ services:
         required: false
     environment:
       # Only pass token when non-empty so "unset" vs "" stays clean for quick mode.
-      # CI file forces TUNNEL_TOKEN: "" + command --url.
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+      # CI file forces CF_TUNNEL_TOKEN: "" + command --url.
+      CF_TUNNEL_TOKEN: ${CF_TUNNEL_TOKEN:-}
       TUNNEL_LOGLEVEL: ${TUNNEL_LOGLEVEL:-info}
       TUNNEL_TRANSPORT_PROTOCOL: ${TUNNEL_TRANSPORT_PROTOCOL:-auto}
       TUNNEL_EDGE_IP_VERSION: ${TUNNEL_EDGE_IP_VERSION:-4}

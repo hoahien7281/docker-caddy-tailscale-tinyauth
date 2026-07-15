@@ -85,7 +85,7 @@ if (!localOk) {
 let publicUrl = process.env.PUBLIC_URL || "";
 
 if (!publicUrl) {
-  const tunnelToken = envGet(ENV, "TUNNEL_TOKEN");
+  const tunnelToken = envGet(ENV, "CF_TUNNEL_TOKEN");
   const whoamiHost = envGet(ENV, "WHOAMI_HOST");
   const domain = envGet(ENV, "DOMAIN");
 

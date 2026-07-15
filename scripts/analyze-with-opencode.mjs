@@ -127,12 +127,12 @@ const ERROR_PATTERNS = [
   {
     regex: /must specify.*token|failed to create tunnel|error parsing tunnel/i,
     category: "cloudflare",
-    hint: "TUNNEL_TOKEN thiếu/sai trong khi command đang chạy 'tunnel run' (named mode, cloudflare/cloudflare.yml). Nếu đây là CI/không có token thật, phải dùng docker-compose.ci.yml (quick tunnel) thay vì chạy compose gốc.",
+    hint: "CF_TUNNEL_TOKEN thiếu/sai trong khi command đang chạy 'tunnel run' (named mode, cloudflare/cloudflare.yml). Nếu đây là CI/không có token thật, phải dùng docker-compose.ci.yml (quick tunnel) thay vì chạy compose gốc.",
   },
   {
     regex: /invalid tunnel secret|401 Unauthorized/i,
     category: "cloudflare",
-    hint: "TUNNEL_TOKEN sai hoặc tunnel đã bị xoá/thu hồi trên Cloudflare dashboard. Provision lại bằng: node cloudflare/scripts/provision-tunnel.mjs.",
+    hint: "CF_TUNNEL_TOKEN sai hoặc tunnel đã bị xoá/thu hồi trên Cloudflare dashboard. Provision lại bằng: node cloudflare/scripts/provision-tunnel.mjs.",
   },
   {
     regex: /x509|certificate/i,
@@ -180,7 +180,7 @@ function maskEnv(key) {
 }
 
 function detectMode() {
-  return envGetRaw("TUNNEL_TOKEN") ? "named" : "quick";
+  return envGetRaw("CF_TUNNEL_TOKEN") ? "named" : "quick";
 }
 
 function activeProfiles() {
@@ -333,7 +333,7 @@ function analyzeService(svc, containers, profiles, keys) {
     const url = discoverPublicUrl();
     if (!url) {
       result.status = "FAIL";
-      result.issues.push(`Không xác định được public URL để giả lập request từ Internet. Named mode cần WHOAMI_HOST/DOMAIN hợp lệ; quick mode cần log cloudflared có URL *.trycloudflare.com. Kiểm tra TUNNEL_TOKEN → ${maskEnv("TUNNEL_TOKEN")}.`);
+      result.issues.push(`Không xác định được public URL để giả lập request từ Internet. Named mode cần WHOAMI_HOST/DOMAIN hợp lệ; quick mode cần log cloudflared có URL *.trycloudflare.com. Kiểm tra CF_TUNNEL_TOKEN → ${maskEnv("CF_TUNNEL_TOKEN")}.`);
     } else {
       const code = httpCode(`${url}/`);
       result.evidence.push(`Giả lập request từ Internet: ${url}/ → HTTP ${code}`);
@@ -364,7 +364,7 @@ function writeReport({ mode, profiles, containers, keys, results }) {
   lines.push("");
   lines.push("Thực hiện bởi: `scripts/analyze-with-opencode.mjs` (đóng vai trò CI/CD reviewer tự động — check docker ps, log, env, và giả lập request thật để xác nhận luồng hoạt động).");
   lines.push(`Thời gian: ${now}`);
-  lines.push(`Chế độ tunnel phát hiện: **${mode}** (named nếu TUNNEL_TOKEN có giá trị, ngược lại quick — xem AGENTS.md mục 'Named vs quick').`);
+  lines.push(`Chế độ tunnel phát hiện: **${mode}** (named nếu CF_TUNNEL_TOKEN có giá trị, ngược lại quick — xem AGENTS.md mục 'Named vs quick').`);
   lines.push(`COMPOSE_PROFILES hiện tại: \`${profiles}\``);
   lines.push("");
 

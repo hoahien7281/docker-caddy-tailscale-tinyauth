@@ -287,7 +287,7 @@ import { parseEnv, envGet, envHasKey, envKeys } from "../../scripts/lib/env-util
 
 ### Cloudflare
 
-- **Named tunnel (prod / full ENV_FILE):** `TUNNEL_TOKEN` + dashboard Public Hostname → `http://caddy:80` for **auth** and **whoami** hosts. Compose: `tunnel run` (no `docker-compose.ci.yml`).
+- **Named tunnel (prod / full ENV_FILE):** `CF_TUNNEL_TOKEN` + dashboard Public Hostname → `http://caddy:80` for **auth** and **whoami** hosts. Compose: `tunnel run` (no `docker-compose.ci.yml`).
 - **Quick tunnel (no token / no secret):** `docker-compose.ci.yml` → `tunnel --url http://caddy:80`, prefer **HTTP/2** + IPv4 on GitHub runners; whoami becomes catch-all `:80` **without** `tinyauth_forwarder`.
 - Service container name / compose service: `cloudflared`.
 
@@ -297,7 +297,7 @@ import { parseEnv, envGet, envHasKey, envKeys } from "../../scripts/lib/env-util
 | ----------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------- |
 | Empty optional env in YAML / `.env` | **Yes** — Tinyauth/Caddy can fail to start            | **Yes**                                                       |
 | `curl -L` following auth redirect   | Risky if `APPURL` wrong; OK if public `https://auth…` | **Fails** if forward-auth still on (redirect → internal host) |
-| Missing `TUNNEL_TOKEN`              | cloudflared crash-loops (`tunnel run`)                | Expected — use CI override                                    |
+| Missing `CF_TUNNEL_TOKEN`              | cloudflared crash-loops (`tunnel run`)                | Expected — use CI override                                    |
 | Whoami protected by Tinyauth        | **Intended** — public probe may get **302/401**       | Must **disable** auth (CI `labels: !override`)                |
 | QUIC on GHA                         | Rare flake with `protocol=auto`                       | Common — force `http2` in CI                                  |
 
@@ -316,7 +316,7 @@ Workflow: `.github/workflows/test.yml`.
 Must:
 
 1. Materialize `.env` from `ENV_FILE` or `.env.ci`.
-2. Detect mode: `TUNNEL_TOKEN` non-empty → **named** (plain compose); else **quick** (`docker-compose.ci.yml`).
+2. Detect mode: `CF_TUNNEL_TOKEN` non-empty → **named** (plain compose); else **quick** (`docker-compose.ci.yml`).
 3. Start stack; fail fast if `cloudflared` is not running.
 4. Run `scripts/wait-and-test.mjs`:
    - require `caddy`, `whoami`, `cloudflared` running;
@@ -328,7 +328,7 @@ Must:
 6. Also dump recent logs to the job console on failure; tear down always.
 7. Never print secret values (only env **keys**).
 
-**Full ENV_FILE checklist for named CI:** `COMPOSE_PROFILES` includes `core` (or equivalent), non-empty `TUNNEL_TOKEN`, public hostnames on the tunnel, `WHOAMI_HOST` (or `DOMAIN`), valid `TINYAUTH_*` (public `APPURL`, users, secure cookie as needed).
+**Full ENV_FILE checklist for named CI:** `COMPOSE_PROFILES` includes `core` (or equivalent), non-empty `CF_TUNNEL_TOKEN`, public hostnames on the tunnel, `WHOAMI_HOST` (or `DOMAIN`), valid `TINYAUTH_*` (public `APPURL`, users, secure cookie as needed).
 
 ### Log artifact layout (CI)
 
@@ -363,7 +363,7 @@ Artifact name pattern: `stack-logs-<run_id>-<run_attempt>` (retention 14 days).
 - Do not merge all services into one monolithic compose file as the only source of truth.
 - Do not name service compose files `docker-compose.yml` inside service dirs.
 - Do not dump service-specific scripts into root `scripts/`.
-- Do not commit `.env` or real `TUNNEL_TOKEN` / `TS_AUTHKEY`.
+- Do not commit `.env` or real `CF_TUNNEL_TOKEN` / `TS_AUTHKEY`.
 - Do not open host ports as the primary public path when Tunnel is the design; Tunnel is the outside entry.
 - Do not break the "reachable from outside" CI check without replacing it.
 - Do not reintroduce `environment: KEY: ${KEY:-}` for optional keys (empty-string injection).

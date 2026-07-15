@@ -45,16 +45,16 @@ function envAppend(line) {
 // 1. Write .env
 if (DRY_RUN) {
   log(`[DRY RUN] Would write .env from: ${ENV_FILE ? "secrets.ENV_FILE" : ".env.ci"}`);
-  log(`[DRY RUN] Mode: ${ENV_FILE && ENV_FILE.includes("TUNNEL_TOKEN") ? "named" : "quick"}`);
+  log(`[DRY RUN] Mode: ${ENV_FILE && ENV_FILE.includes("CF_TUNNEL_TOKEN") ? "named" : "quick"}`);
 } else if (ENV_FILE) {
   writeFileSync(ENV, ENV_FILE + "\n");
   log("Wrote .env from secrets.ENV_FILE");
-  if (envHasKey(ENV, "TUNNEL_TOKEN")) {
+  if (envHasKey(ENV, "CF_TUNNEL_TOKEN")) {
     appendEnv("MODE", "named");
-    log("Named Cloudflare tunnel mode (TUNNEL_TOKEN set)");
+    log("Named Cloudflare tunnel mode (CF_TUNNEL_TOKEN set)");
   } else {
     appendEnv("MODE", "quick");
-    log("Quick tunnel mode (no TUNNEL_TOKEN in ENV_FILE)");
+    log("Quick tunnel mode (no CF_TUNNEL_TOKEN in ENV_FILE)");
   }
 } else {
   if (!DRY_RUN) copyFileSync(ENV_CI, ENV);
@@ -64,7 +64,7 @@ if (DRY_RUN) {
 showEnvKeys();
 
 // 2. Ensure required Tinyauth vars for quick mode
-if (!ENV_FILE || !envHasKey(ENV, "TUNNEL_TOKEN")) {
+if (!ENV_FILE || !envHasKey(ENV, "CF_TUNNEL_TOKEN")) {
   if (!envHasKey(ENV, "TINYAUTH_AUTH_USERS")) {
     if (!DRY_RUN) envAppend('TINYAUTH_AUTH_USERS=user:$$2a$$10$$UdLYoJ5lgPsC0RKqYH/jMua7zIn0g9kPqWmhYayJYLaZQ/FTmH2/u');
     log("[env] Added TINYAUTH_AUTH_USERS (demo)");
@@ -96,5 +96,5 @@ if (envHasKey(ENV, "TS_AUTHKEY") && !/full|tailscale/.test(envGet(ENV, "COMPOSE_
 
 // 4. Summary
 if (GITHUB_STEP_SUMMARY) {
-  appendFileSync(GITHUB_STEP_SUMMARY, `## Environment\n\n- Mode: ${ENV_FILE && envHasKey(ENV, "TUNNEL_TOKEN") ? "named" : "quick"}\n- Profiles: ${envGet(ENV, "COMPOSE_PROFILES")}\n\n`);
+  appendFileSync(GITHUB_STEP_SUMMARY, `## Environment\n\n- Mode: ${ENV_FILE && envHasKey(ENV, "CF_TUNNEL_TOKEN") ? "named" : "quick"}\n- Profiles: ${envGet(ENV, "COMPOSE_PROFILES")}\n\n`);
 }
