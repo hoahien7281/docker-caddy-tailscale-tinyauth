@@ -49,6 +49,9 @@ const ERROR_PATTERNS = [
   { regex: /tinyauth.*error/i, category: "tinyauth", severity: "high" },
   { regex: /caddy.*error/i, category: "caddy", severity: "high" },
   { regex: /tailscale.*error/i, category: "tailscale", severity: "high" },
+  { regex: /dozzle.*error/i, category: "dozzle", severity: "high" },
+  { regex: /filebrowser.*error/i, category: "filebrowser", severity: "high" },
+  { regex: /webssh.*error|ttyd.*error|tmux.*error/i, category: "webssh", severity: "high" },
   
   // Config errors
   { regex: /invalid.*config/i, category: "config", severity: "high" },
@@ -187,6 +190,9 @@ function analyzeSourceCode(errors) {
     "tinyauth": ["tinyauth/tinyauth.yml", "tinyauth/.env.example"],
     "caddy": ["caddy/caddy.yml", "caddy/.env.example"],
     "tailscale": ["tailscale/tailscale.yml", "tailscale/.env.example"],
+    "dozzle": ["dozzle/dozzle.yml", "dozzle/.env.example"],
+    "filebrowser": ["filebrowser/filebrowser.yml", "filebrowser/.env.example"],
+    "webssh": ["webssh/webssh.yml", "webssh/.env.example", "webssh/Dockerfile"],
     "config": [".env", ".env.example", ".env.ci"],
     "network": ["networks/networks.yml"],
     "build": ["*/Dockerfile", "docker-compose.yml"]

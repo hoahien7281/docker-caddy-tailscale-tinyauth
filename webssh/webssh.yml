@@ -1,0 +1,49 @@
+# =============================================================================
+# webssh/webssh.yml — browser terminal with persistent tmux session
+# =============================================================================
+#
+# Purpose:
+#   Web terminal for the current repository workspace. The terminal command is a
+#   named tmux session (`webssh`), so closing the browser does not kill the shell.
+#
+# Docs:
+#   - ttyd: https://github.com/tsl0922/ttyd
+#   - tmux: https://github.com/tmux/tmux/wiki
+#   - Caddy labels: https://github.com/lucaslorentz/caddy-docker-proxy
+#
+# Env/catalog:
+#   - webssh/.env.example
+#   - WEBSSH_HOST defaults to http://ttyd.${DOMAIN}
+#
+# Profiles: webssh | full
+# =============================================================================
+
+services:
+  webssh:
+    image: proxy-stack-webssh:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: webssh
+    restart: unless-stopped
+    env_file:
+      - path: ../.env
+        required: false
+      - path: .env
+        required: false
+    working_dir: /workspace
+    volumes:
+      - ..:/workspace
+      - webssh-tmux:/root
+    networks:
+      - proxy
+    labels:
+      caddy: ${CADDY_WEBSSH_HOST:-${WEBSSH_HOST:-http://ttyd.${DOMAIN:-localhost}}}
+      caddy.reverse_proxy: "{{upstreams 7681}}"
+      caddy.import: tinyauth_forwarder *
+    profiles:
+      - webssh
+      - full
+
+volumes:
+  webssh-tmux:

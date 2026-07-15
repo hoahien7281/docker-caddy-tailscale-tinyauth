@@ -1,0 +1,55 @@
+# =============================================================================
+# filebrowser/filebrowser.yml — repo file browser (protected by Tinyauth)
+# =============================================================================
+#
+# Purpose:
+#   Browser UI for the current repository workspace. Mounts the project root at
+#   /srv so hidden files are visible too. No default excludes are configured here.
+#
+# Docs:
+#   - Image/docs: https://filebrowser.org/
+#   - Docker Hub: https://hub.docker.com/r/filebrowser/filebrowser
+#   - Caddy labels: https://github.com/lucaslorentz/caddy-docker-proxy
+#
+# Env/catalog:
+#   - filebrowser/.env.example
+#   - FILEBROWSER_HOST defaults to http://files.${DOMAIN}
+#
+# Profiles: filebrowser | full
+# =============================================================================
+
+services:
+  filebrowser:
+    image: filebrowser/filebrowser:latest
+    container_name: filebrowser
+    restart: unless-stopped
+    env_file:
+      - path: ../.env
+        required: false
+      - path: .env
+        required: false
+    command:
+      - --address
+      - 0.0.0.0
+      - --port
+      - "80"
+      - --root
+      - /srv
+      - --database
+      - /database/filebrowser.db
+      - --noauth
+    volumes:
+      - ..:/srv
+      - filebrowser-database:/database
+    networks:
+      - proxy
+    labels:
+      caddy: ${CADDY_FILEBROWSER_HOST:-${FILEBROWSER_HOST:-http://files.${DOMAIN:-localhost}}}
+      caddy.reverse_proxy: "{{upstreams 80}}"
+      caddy.import: tinyauth_forwarder *
+    profiles:
+      - filebrowser
+      - full
+
+volumes:
+  filebrowser-database:

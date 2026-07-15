@@ -6,6 +6,10 @@
     "cloudflare/cloudflare.yml",
     "tinyauth/tinyauth.yml",
     "whoami/whoami.yml",
+    "dozzle/dozzle.yml",
+    "filebrowser/filebrowser.yml",
+    "webssh/webssh.yml",
+    "webssh/Dockerfile",
     "tailscale/tailscale.yml",
     "docker-compose.ci.yml"
   ]

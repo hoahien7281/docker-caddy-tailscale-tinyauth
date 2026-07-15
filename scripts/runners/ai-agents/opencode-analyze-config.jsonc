@@ -3,7 +3,7 @@
   "timeout_ms": 600000,
 
   // Services expected in this stack.
-  "services": ["caddy", "tinyauth", "whoami", "cloudflared", "tailscale"],
+  "services": ["caddy", "tinyauth", "whoami", "cloudflared", "tailscale", "dozzle", "filebrowser", "webssh"],
 
   // Source/config files opencode must inspect when correlating logs to fixes.
   "code_files": [
@@ -13,6 +13,9 @@
     "caddy/caddy.yml",
     "tinyauth/tinyauth.yml",
     "whoami/whoami.yml",
+    "dozzle/dozzle.yml",
+    "filebrowser/filebrowser.yml",
+    "webssh/webssh.yml",
     "cloudflare/cloudflare.yml",
     "tailscale/tailscale.yml",
     ".github/workflows/test.yml",

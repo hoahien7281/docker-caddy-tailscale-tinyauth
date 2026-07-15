@@ -15,14 +15,21 @@
     "files.tailaa8079.ts.net:443": {
       "Handlers": {
         "/": {
-          "Proxy": "http://files:80"
+          "Proxy": "http://filebrowser:80"
         }
       }
     },
     "ttyd.tailaa8079.ts.net:443": {
       "Handlers": {
         "/": {
-          "Proxy": "http://ttyd:7681"
+          "Proxy": "http://webssh:7681"
+        }
+      }
+    },
+    "dozzle.tailaa8079.ts.net:443": {
+      "Handlers": {
+        "/": {
+          "Proxy": "http://dozzle:8080"
         }
       }
     },

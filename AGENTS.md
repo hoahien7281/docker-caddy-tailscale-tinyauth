@@ -37,6 +37,9 @@ README.md                # Human-facing docs
 | `caddy/`      | `caddy.yml`      | `caddy/.env.example`      | Reverse proxy                 |
 | `tinyauth/`   | `tinyauth.yml`   | `tinyauth/.env.example`   | Forward-auth login            |
 | `whoami/`     | `whoami.yml`     | `whoami/.env.example`     | Demo upstream                 |
+| `dozzle/`     | `dozzle.yml`     | `dozzle/.env.example`     | Protected Docker logs         |
+| `filebrowser/`| `filebrowser.yml`| `filebrowser/.env.example`| Protected repo file browser   |
+| `webssh/`     | `webssh.yml`     | `webssh/.env.example`     | Protected ttyd/tmux terminal  |
 | `cloudflare/` | `cloudflare.yml` | `cloudflare/.env.example` | cloudflared public edge       |
 | `tailscale/`  | `tailscale.yml`  | `tailscale/.env.example`  | Profiles: `tailscale`, `full` |
 
@@ -156,10 +159,10 @@ const config = loadConfig();
 
 1. **Every app service is profile-gated.** No app service may run with an empty `profiles:` list. (`networks/` is infrastructure only — no service profile.)
 2. **Each service has its own named profile** equal to the service/folder intent:
-   - `caddy`, `tinyauth`, `whoami`, `cloudflare`, `tailscale`
+   - `caddy`, `tinyauth`, `whoami`, `cloudflare`, `tailscale`, `dozzle`, `filebrowser`, `webssh`
 3. **Group profiles (OR membership):**
    - `core` — public path: caddy + tinyauth + whoami + cloudflare
-   - `full` — everything: core members **plus** tailscale
+   - `full` — everything: core members **plus** tailscale and admin tools
 4. **Tailscale is never required for `core`.** Only on `tailscale` and/or `full`.
 5. **Semantics = OR:** a service starts if **any one** of its listed profiles is active.
 6. **Activation source of truth:** root `.env` → `COMPOSE_PROFILES=...` (Compose loads automatically). CLI `--profile X` can add profiles for one invocation.
@@ -183,8 +186,11 @@ const config = loadConfig();
 | `whoami`     | Whoami only                                          |
 | `cloudflare` | cloudflared only                                     |
 | `tailscale`  | Tailscale only                                       |
+| `dozzle`     | Dozzle only                                          |
+| `filebrowser`| Filebrowser only                                     |
+| `webssh`     | WebSSH/ttyd only                                     |
 | `core`       | caddy + tinyauth + whoami + cloudflare (public path) |
-| `full`       | core + tailscale                                     |
+| `full`       | core + tailscale + dozzle + filebrowser + webssh     |
 
 | Service       | Profiles on the service      |
 | ------------- | ---------------------------- |
@@ -193,6 +199,9 @@ const config = loadConfig();
 | `whoami`      | `whoami`, `core`, `full`     |
 | `cloudflared` | `cloudflare`, `core`, `full` |
 | `tailscale`   | `tailscale`, `full`          |
+| `dozzle`      | `dozzle`, `full`             |
+| `filebrowser` | `filebrowser`, `full`        |
+| `webssh`      | `webssh`, `full`             |
 
 ```bash
 # .env (recommended default)
@@ -218,6 +227,9 @@ docker compose \
   -f caddy/caddy.yml \
   -f tinyauth/tinyauth.yml \
   -f whoami/whoami.yml \
+  -f dozzle/dozzle.yml \
+  -f filebrowser/filebrowser.yml \
+  -f webssh/webssh.yml \
   -f cloudflare/cloudflare.yml \
   -f tailscale/tailscale.yml \
   up -d

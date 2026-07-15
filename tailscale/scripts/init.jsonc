@@ -3,8 +3,9 @@
   // These bypass Caddy/Tinyauth and proxy directly to the service container.
   "services": [
     { "name": "auth", "upstream": "http://tinyauth:3000" },
-    { "name": "files", "upstream": "http://files:80" },
-    { "name": "ttyd", "upstream": "http://ttyd:7681" },
+    { "name": "files", "upstream": "http://filebrowser:80" },
+    { "name": "ttyd", "upstream": "http://webssh:7681" },
+    { "name": "dozzle", "upstream": "http://dozzle:8080" },
     { "name": "whoami", "upstream": "http://whoami:80" }
   ]
 }

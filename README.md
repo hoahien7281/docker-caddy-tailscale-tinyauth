@@ -20,6 +20,9 @@ Tailnet  ──► Tailscale Serve ──► Caddy   (optional private access)
 | `caddy/caddy.yml` + `caddy/scripts/` | Reverse proxy (`caddy-docker-proxy`) |
 | `tinyauth/tinyauth.yml` + `tinyauth/scripts/` | Forward-auth login UI |
 | `whoami/whoami.yml` | Demo upstream app |
+| `dozzle/dozzle.yml` | Protected Docker log viewer |
+| `filebrowser/filebrowser.yml` | Protected repository file browser |
+| `webssh/webssh.yml` | Protected web terminal with persistent tmux session |
 | `cloudflare/cloudflare.yml` + `cloudflare/scripts/` | `cloudflared` tunnel (public edge) |
 | `tailscale/tailscale.yml` + `tailscale/scripts/` | Optional Tailscale node + Serve |
 | `scripts/` | **Stack-wide only** (`up.mjs`, `wait-and-test.mjs`) |
@@ -55,8 +58,8 @@ COMPOSE_PROFILES=core,tailscale docker compose up -d
 | Profile | Services |
 |---------|----------|
 | `core` | caddy, tinyauth, whoami, cloudflare |
-| `full` | core + tailscale |
-| `caddy` / `tinyauth` / `whoami` / `cloudflare` / `tailscale` | từng service |
+| `full` | core + tailscale + dozzle + filebrowser + webssh |
+| `caddy` / `tinyauth` / `whoami` / `cloudflare` / `tailscale` / `dozzle` / `filebrowser` / `webssh` | từng service |
 
 Set in `.env`:
 
@@ -124,6 +127,9 @@ Root `.env.example` = minimal keys the compose files actually use.
 | [`caddy/.env.example`](caddy/.env.example) | ports, `CADDY_DOCKER_*`, ingress networks |
 | [`tinyauth/.env.example`](tinyauth/.env.example) | all `TINYAUTH_*` v5 groups |
 | [`whoami/.env.example`](whoami/.env.example) | `WHOAMI_HOST` / labels |
+| [`dozzle/.env.example`](dozzle/.env.example) | `DOZZLE_HOST` / labels |
+| [`filebrowser/.env.example`](filebrowser/.env.example) | `FILEBROWSER_HOST` / workspace mount notes |
+| [`webssh/.env.example`](webssh/.env.example) | `WEBSSH_HOST` / ttyd + tmux notes |
 | [`tailscale/.env.example`](tailscale/.env.example) | all `TS_*` Docker params |
 | [`networks/.env.example`](networks/.env.example) | network knobs (mostly hard-coded) |
 
@@ -141,6 +147,9 @@ Do **not** copy blank lines like `TINYAUTH_SERVER_SOCKETPATH=` — empty optiona
 | `TINYAUTH_AUTH_USERS` | `user:bcrypt` (use `$$` for `$` in Compose) |
 | `TINYAUTH_AUTH_SECURECOOKIE` | `true` behind HTTPS public URLs |
 | `WHOAMI_HOST` | Caddy site for the demo app |
+| `DOZZLE_HOST` | Caddy site for protected Docker logs |
+| `FILEBROWSER_HOST` | Caddy site for protected repo file browser |
+| `WEBSSH_HOST` | Caddy site for protected ttyd/tmux terminal |
 | `TS_AUTHKEY` | Tailscale auth key (profile `tailscale`) |
 
 ## Cloudflare named tunnel setup
@@ -153,10 +162,23 @@ Do **not** copy blank lines like `TINYAUTH_SERVER_SOCKETPATH=` — empty optiona
    |-----------------|---------|
    | `auth.example.com` | `http://caddy:80` |
    | `whoami.example.com` | `http://caddy:80` |
+   | `dozzle.example.com` | `http://caddy:80` |
+   | `files.example.com` | `http://caddy:80` |
+   | `ttyd.example.com` | `http://caddy:80` |
 
 4. DNS can be managed by Cloudflare when you add hostnames on the tunnel.
 
 Caddy routes by `Host` header; Cloudflare only needs to send traffic to `caddy:80`.
+
+## Admin tools
+
+These are not part of `core`; enable them with `COMPOSE_PROFILES=full` or their
+own profiles. All public Caddy routes import `tinyauth_forwarder`.
+
+- `dozzle`: Docker logs (`amir20/dozzle`), Docker socket mounted read-only.
+- `filebrowser`: repository root mounted at `/srv`; hidden files are visible.
+- `webssh`: ttyd terminal in `/workspace`; `tmux new-session -A -s webssh`
+  preserves the shell when the browser closes.
 
 ## Tailscale (optional)
 

@@ -1,0 +1,41 @@
+# =============================================================================
+# dozzle/dozzle.yml — Docker log viewer (protected by Tinyauth)
+# =============================================================================
+#
+# Purpose:
+#   Browser UI for container logs via Docker socket, routed by Caddy and protected
+#   by the shared `tinyauth_forwarder` snippet.
+#
+# Docs:
+#   - Image/docs: https://dozzle.dev/
+#   - Docker Hub: https://hub.docker.com/r/amir20/dozzle
+#   - Caddy labels: https://github.com/lucaslorentz/caddy-docker-proxy
+#
+# Env/catalog:
+#   - dozzle/.env.example
+#   - DOZZLE_HOST defaults to http://dozzle.${DOMAIN}
+#
+# Profiles: dozzle | full
+# =============================================================================
+
+services:
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: dozzle
+    restart: unless-stopped
+    env_file:
+      - path: ../.env
+        required: false
+      - path: .env
+        required: false
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - proxy
+    labels:
+      caddy: ${CADDY_DOZZLE_HOST:-${DOZZLE_HOST:-http://dozzle.${DOMAIN:-localhost}}}
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+      caddy.import: tinyauth_forwarder *
+    profiles:
+      - dozzle
+      - full

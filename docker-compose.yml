@@ -36,6 +36,9 @@
 #     -f caddy/caddy.yml \
 #     -f tinyauth/tinyauth.yml \
 #     -f whoami/whoami.yml \
+#     -f dozzle/dozzle.yml \
+#     -f filebrowser/filebrowser.yml \
+#     -f webssh/webssh.yml \
 #     -f cloudflare/cloudflare.yml \
 #     -f tailscale/tailscale.yml \
 #     up -d
@@ -56,5 +59,8 @@ include:
   - path: ./caddy/caddy.yml
   - path: ./tinyauth/tinyauth.yml
   - path: ./whoami/whoami.yml
+  - path: ./dozzle/dozzle.yml
+  - path: ./filebrowser/filebrowser.yml
+  - path: ./webssh/webssh.yml
   - path: ./cloudflare/cloudflare.yml
   - path: ./tailscale/tailscale.yml
