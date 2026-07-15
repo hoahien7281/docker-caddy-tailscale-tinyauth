@@ -1,0 +1,24 @@
+{
+  // Max time for opencode agent analysis in CI.
+  "timeout_ms": 600000,
+
+  // Services expected in this stack.
+  "services": ["caddy", "tinyauth", "whoami", "cloudflared", "tailscale"],
+
+  // Source/config files opencode must inspect when correlating logs to fixes.
+  "code_files": [
+    "docker-compose.yml",
+    "docker-compose.ci.yml",
+    "networks/networks.yml",
+    "caddy/caddy.yml",
+    "tinyauth/tinyauth.yml",
+    "whoami/whoami.yml",
+    "cloudflare/cloudflare.yml",
+    "tailscale/tailscale.yml",
+    ".github/workflows/test.yml",
+    "scripts/runners/setup-env.mjs",
+    "scripts/runners/start-stack.mjs",
+    "scripts/runners/collect-logs.mjs",
+    "scripts/wait-and-test.mjs"
+  ]
+}

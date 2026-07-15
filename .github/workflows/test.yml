@@ -109,8 +109,9 @@ jobs:
 
       - name: Install opencode
         if: always()
-        run: curl -fsSL https://opencode.ai/install | bash
-        continue-on-error: true
+        run: |
+          curl -fsSL https://opencode.ai/install | bash
+          echo "$HOME/.opencode/bin" >> "$GITHUB_PATH"
 
       - name: Analyze and report errors
         if: always()
