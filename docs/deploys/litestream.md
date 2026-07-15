@@ -133,7 +133,7 @@ Helper sẽ auto-enable profile `litestream` khi thấy `LITESTREAM_<index>_SERV
 
 `restore` báo remote không tồn tại:
 
-- Đây là lần chạy đầu. Không fatal. App tạo DB, Litestream sync lên sau.
+- Đây là lần chạy đầu. Không fatal. Script dùng `-if-replica-exists`, app tạo DB, Litestream sync lên sau.
 
 Credential/network error:
 

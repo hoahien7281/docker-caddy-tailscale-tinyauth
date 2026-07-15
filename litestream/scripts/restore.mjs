@@ -42,7 +42,15 @@ function shQuote(value) {
 }
 
 function isMissingRemote(output) {
-  return /no such key|not found|does not exist|replica.*not.*found|NoSuchKey|404/i.test(output);
+  return /no matching backup|no such key|not found|does not exist|replica.*not.*found|NoSuchKey|404/i.test(output);
+}
+
+function redactSecrets(value) {
+  return value
+    .replace(/(access-key-id:\s*).+/gi, "$1[REDACTED]")
+    .replace(/(secret-access-key:\s*).+/gi, "$1[REDACTED]")
+    .replace(/(AWS_ACCESS_KEY_ID=)[^\s]+/gi, "$1[REDACTED]")
+    .replace(/(AWS_SECRET_ACCESS_KEY=)[^\s]+/gi, "$1[REDACTED]");
 }
 
 const env = { ...parseEnv(ENV), ...process.env };
@@ -73,7 +81,7 @@ for (const item of items) {
     continue;
   }
 
-  const cmd = `${docker.cmd} run --rm -v ${shQuote(dataRoot)}:/data -v ${shQuote(runtimeConfig)}:/etc/litestream.yml:ro ${shQuote(image)} restore -if-db-not-exists -config /etc/litestream.yml ${shQuote(item.path)}`;
+  const cmd = `${docker.cmd} run --rm -v ${shQuote(dataRoot)}:/data -v ${shQuote(runtimeConfig)}:/etc/litestream.yml:ro ${shQuote(image)} restore -if-db-not-exists -if-replica-exists -config /etc/litestream.yml ${shQuote(item.path)}`;
   if (DRY_RUN) {
     log(`[DRY RUN] ${cmd}`);
     continue;
@@ -89,6 +97,7 @@ for (const item of items) {
       continue;
     }
     console.error(`Litestream restore failed for ${item.service}.`);
+    if (output.trim()) console.error(redactSecrets(output.trim()));
     process.exit(error.status || 1);
   }
 }
