@@ -49,6 +49,29 @@ jobs:
       - name: Load cached Docker images
         run: node scripts/runners/cache-docker-build-github.mjs restore
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build webssh image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./webssh
+          file: ./webssh/Dockerfile
+          tags: proxy-stack-webssh:latest
+          load: true
+          cache-from: type=gha,scope=webssh
+          cache-to: type=gha,mode=max,scope=webssh
+
+      - name: Build rclone image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./rclone/Dockerfile
+          tags: proxy-stack-rclone:local
+          load: true
+          cache-from: type=gha,scope=rclone
+          cache-to: type=gha,mode=max,scope=rclone
+
       # ── Environment ───────────────────────────────────────────────
       - name: Setup environment
         env:

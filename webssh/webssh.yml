@@ -24,7 +24,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    pull_policy: build
     container_name: webssh
     restart: unless-stopped
     env_file:
