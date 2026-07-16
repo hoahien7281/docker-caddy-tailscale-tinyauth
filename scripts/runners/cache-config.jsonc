@@ -1,6 +1,5 @@
 {
-  // Compose files used to compute Docker image cache key.
-  // Script reads these to discover pinned image tags.
+  // Compose files used to compute the runtime smoke-test Docker image cache key.
   "compose_yamls": [
     "caddy/caddy.yml",
     "cloudflare/cloudflare.yml",

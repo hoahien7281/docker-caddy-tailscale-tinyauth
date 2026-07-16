@@ -424,6 +424,37 @@ Security rule: CI artifacts and AI-analysis prompts must never contain raw secre
 9. Update `scripts/runners/cache-config.jsonc` and `scripts/runners/ai-agents/opencode-analyze-config.jsonc` if the service adds compose files, Dockerfiles, or logs/code that CI should inspect.
 10. Keep CI able to prove external reachability (whoami or equivalent).
 
+## Adding an app (user apps — automated)
+
+**Apps** (websites/APIs/tools you expose behind the proxy) are added with
+automation, not by hand. Full guide + manual checklists: **`docs/ADDING_APPS.md`**.
+
+```bash
+make add-app NAME=nine-router TYPE=dockerfile PORT=3000   # auth ON; --no-auth for public
+make validate-apps                                        # enforce the rules
+make gen-app-ci                                               # regenerate CI build/cache steps
+```
+
+Rules an app **must** follow (enforced by `scripts/addapp/validate-app.mjs`):
+
+1. Folder `<name>/` with compose file `<name>/<name>.yml`, `# ===` header.
+2. `profiles: [<name>, full]` (add `core` only if part of the default public stack).
+3. Attached to `proxy`; loads `env_file: ../.env` + `./.env`.
+4. Caddy host label → `<slug>.${DOMAIN}` (like `whoami.${DOMAIN}`); many apps allowed.
+5. **ENV PREFIX rule:** every app env var starts with the app prefix
+   (`nine-router` → `NINE_ROUTER_`). Only shared keys may be unprefixed:
+   `DOMAIN`, `COMPOSE_PROFILES`, `DOCKER_VOLUME_*`, `CADDY_*`, `TINYAUTH_*`.
+6. Data under `${DOCKER_VOLUME_DATA_ABS}/<name>`; no new named volumes.
+7. No `environment: KEY: ${KEY:-}` empty-string injection.
+8. Registered in `scripts/addapp/apps-config.jsonc` (done by `add-app`) and in
+   root `docker-compose.yml` `include`.
+
+The four app types (`image`, `dockerfile`, `npx`, `code`) have templates in
+`docs/templates/`. Buildable types (`dockerfile`, `code`) get a unique buildx
+  cache **scope** = app name; `gen-app-ci` writes matching steps into dedicated
+  app CI files: `.github/workflows/apps.yml` and `.azure/apps-pipelines.yml`.
+  Runtime smoke workflows stay focused on stack reachability.
+
 ## What not to do
 
 - Do not merge all services into one monolithic compose file as the only source of truth.

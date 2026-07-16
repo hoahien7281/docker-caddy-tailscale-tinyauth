@@ -1,0 +1,48 @@
+# =============================================================================
+# __APP_NAME__/__APP_NAME__.yml — app (type: code / self-authored)
+# =============================================================================
+#
+# Purpose:
+#   Your own application code, built from ./Dockerfile. Source lives in
+#   __APP_NAME__/app/. CI builds this with buildx cache scope "__APP_NAME__".
+#
+# Env — priority order:
+#   1) env_file ../.env  2) env_file ./.env  3) environment (YAML wins)
+# Catalog: __APP_NAME__/.env.example  (all keys prefixed __APP_PREFIX___)
+#
+# Docs:
+#   - Caddy labels: https://github.com/lucaslorentz/caddy-docker-proxy
+#
+# Profiles: __APP_NAME__ | full
+# =============================================================================
+
+services:
+  __APP_NAME__:
+    image: proxy-stack-__APP_NAME__:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: __APP_NAME__
+    restart: unless-stopped
+    env_file:
+      - path: ../.env
+        required: false
+      - path: .env
+        required: false
+    volumes:
+      - ${DOCKER_VOLUME_DATA_ABS:-../ci-data}/__APP_NAME__:/data
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:__APP_PORT__/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 25s
+    labels:
+      caddy: ${CADDY___APP_PREFIX___HOST:-${__APP_PREFIX___HOST:-http://__APP_SLUG__.${DOMAIN:-localhost}}}
+      caddy.reverse_proxy: "{{upstreams __APP_PORT__}}"
+__AUTH_IMPORT__
+    profiles:
+      - __APP_NAME__
+      - full

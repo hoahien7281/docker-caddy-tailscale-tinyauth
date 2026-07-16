@@ -1,0 +1,28 @@
+name: app-builds
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  apps:
+    name: Validate and build apps
+    runs-on: ubuntu-latest
+    if: vars.ENABLE_APP_BUILDS != 'false'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate apps
+        run: node scripts/addapp/validate-app.mjs
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: No buildable apps
+        run: echo "No buildable apps registered"

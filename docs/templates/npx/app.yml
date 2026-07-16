@@ -1,0 +1,60 @@
+# =============================================================================
+# __APP_NAME__/__APP_NAME__.yml — app (type: npx / npm)
+# =============================================================================
+#
+# Purpose:
+#   Run a Node.js app via `npx` or `npm` using an upstream node image — no
+#   Dockerfile, no build step. Good for CLI tools / servers published to npm.
+#
+# How it works:
+#   - image: node:<ver>-alpine (pulled, cached like any upstream image)
+#   - command: npx -y <package> ...   OR   npm exec / npm start
+#   - working_dir + volume: mount app source if you `npm start` your own code;
+#     omit the source mount if you only run a published npx package.
+#
+# Env — priority order:
+#   1) env_file ../.env  2) env_file ./.env  3) environment (YAML wins)
+# Catalog: __APP_NAME__/.env.example  (all keys prefixed __APP_PREFIX___)
+#
+# Docs:
+#   - node image: https://hub.docker.com/_/node
+#   - npx: https://docs.npmjs.com/cli/commands/npx
+#
+# Profiles: __APP_NAME__ | full
+# =============================================================================
+
+services:
+  __APP_NAME__:
+    image: ${__APP_PREFIX___NODE_IMAGE:-node:22-alpine}
+    container_name: __APP_NAME__
+    restart: unless-stopped
+    env_file:
+      - path: ../.env
+        required: false
+      - path: .env
+        required: false
+    working_dir: /app
+    # Runs a published package via npx. Package + args come from env so the
+    # command stays declarative (no inline branching). PORT is passed via env.
+    command:
+      - sh
+      - -c
+      - 'npx -y ${__APP_PREFIX___NPX_PACKAGE:-http-server} ${__APP_PREFIX___NPX_ARGS:-. -p __APP_PORT__ -a 0.0.0.0}'
+    volumes:
+      # Persistent data. Add a source mount ( - ./app:/app ) if running your own code.
+      - ${DOCKER_VOLUME_DATA_ABS:-../ci-data}/__APP_NAME__:/data
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:__APP_PORT__/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+    labels:
+      caddy: ${CADDY___APP_PREFIX___HOST:-${__APP_PREFIX___HOST:-http://__APP_SLUG__.${DOMAIN:-localhost}}}
+      caddy.reverse_proxy: "{{upstreams __APP_PORT__}}"
+__AUTH_IMPORT__
+    profiles:
+      - __APP_NAME__
+      - full

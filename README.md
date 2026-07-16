@@ -253,6 +253,25 @@ own profiles. Admin routes import `tinyauth_forwarder`; whoami imports a gated s
 - `webssh`: ttyd terminal in `/workspace`; `tmux new-session -A -s webssh`
   preserves the shell when the browser closes.
 
+## Adding your own apps
+
+Add websites / APIs / tools behind the proxy with the app scaffolder. Each app
+gets its own subdomain (`<slug>.${DOMAIN}`, like `whoami.${DOMAIN}`) and you can
+add as many as you want. Four types are supported: `image`, `dockerfile`, `npx`,
+`code`.
+
+```bash
+# auth ON by default; add --no-auth (or AUTH=--no-auth) for a public route
+make add-app NAME=nine-router TYPE=dockerfile PORT=3000
+make validate-apps      # enforce the rules (env prefix, profiles, network, ...)
+make gen-app-ci             # regenerate GitHub Actions + Azure Pipelines build steps
+COMPOSE_PROFILES=core,nine-router make up
+```
+
+Key rule: every app env var must start with the app's prefix
+(`nine-router` → `NINE_ROUTER_`). Full guide + manual checklists:
+[`docs/ADDING_APPS.md`](docs/ADDING_APPS.md).
+
 ## Tailscale (optional)
 
 ```bash

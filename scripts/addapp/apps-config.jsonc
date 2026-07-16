@@ -1,0 +1,10 @@
+{
+  // =========================================================================
+  // apps-config.jsonc — central registry of user apps added to the stack
+  // (edited by scripts/addapp/add-app.mjs — see scripts/addapp/app-utils.mjs)
+  //
+  // Entry schema: { name, prefix, type, port, auth, build? }
+  //   build = { context, dockerfile, image, scope }  (only when a Dockerfile is built)
+  // =========================================================================
+  "apps": [],
+}

@@ -1,0 +1,47 @@
+# =============================================================================
+# __APP_NAME__/__APP_NAME__.yml — app (type: image / upstream)
+# =============================================================================
+#
+# Purpose:
+#   Route an upstream Docker image through Caddy. No build step — the image is
+#   pulled as-is (like whoami / filebrowser).
+#
+# Env — priority order:
+#   1) env_file ../.env  2) env_file ./.env  3) environment (YAML wins)
+# Catalog: __APP_NAME__/.env.example  (all keys prefixed __APP_PREFIX___)
+#
+# Docs:
+#   - Caddy labels: https://github.com/lucaslorentz/caddy-docker-proxy
+#   - Tinyauth + Caddy: https://tinyauth.app/docs/community/caddy/
+#
+# Profiles: __APP_NAME__ | full
+# =============================================================================
+
+services:
+  __APP_NAME__:
+    image: ${__APP_PREFIX___IMAGE:-CHANGE_ME/image:latest}
+    container_name: __APP_NAME__
+    restart: unless-stopped
+    env_file:
+      - path: ../.env
+        required: false
+      - path: .env
+        required: false
+    volumes:
+      # App data lives under the shared data root. Remove if the app is stateless.
+      - ${DOCKER_VOLUME_DATA_ABS:-../ci-data}/__APP_NAME__:/data
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:__APP_PORT__/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    labels:
+      caddy: ${CADDY___APP_PREFIX___HOST:-${__APP_PREFIX___HOST:-http://__APP_SLUG__.${DOMAIN:-localhost}}}
+      caddy.reverse_proxy: "{{upstreams __APP_PORT__}}"
+__AUTH_IMPORT__
+    profiles:
+      - __APP_NAME__
+      - full

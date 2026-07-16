@@ -1,4 +1,4 @@
-.PHONY: up up-ci up-core up-full up-ts down logs ps config profiles test-ci user provision tunnel-url ts-status
+.PHONY: up up-ci up-core up-full up-ts down logs ps config profiles test-ci user provision tunnel-url ts-status add-app validate-apps gen-app-ci
 
 # Uses COMPOSE_PROFILES from .env (default in .env.example: core)
 up:
@@ -52,6 +52,18 @@ tunnel-url:
 
 ts-status:
 	node tailscale/scripts/status.mjs
+
+# ── Apps (add / validate / regenerate CI) ───────────────────────────────────
+# Usage: make add-app NAME=nine-router TYPE=dockerfile PORT=3000 [AUTH=--no-auth] [SUB=router]
+add-app:
+	node scripts/addapp/add-app.mjs --name $(NAME) --type $(TYPE) --port $(or $(PORT),3000) $(if $(SUB),--subdomain $(SUB),) $(AUTH)
+	node scripts/addapp/gen-app-ci.mjs
+
+validate-apps:
+	node scripts/addapp/validate-app.mjs
+
+gen-app-ci:
+	node scripts/addapp/gen-app-ci.mjs
 
 dump-config:
 	node caddy/scripts/dump-config.mjs
