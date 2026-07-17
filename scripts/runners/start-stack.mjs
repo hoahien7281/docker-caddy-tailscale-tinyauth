@@ -193,7 +193,7 @@ if (nodesync.enabled) {
     }
     // Registration ghi node booting ngay; đợi ngắn để RTDB server timestamp ổn định.
     if (!DRY_RUN) await new Promise((done) => setTimeout(done, 3000));
-    run(composeArgs(`exec -T orchestrator node scripts/discover-predecessor.mjs --json > ci-runtime/nodesync/predecessor.json`));
+    run(composeArgs(`run --rm --no-deps orchestrator node scripts/discover-predecessor.mjs --json > ci-runtime/nodesync/predecessor.json`));
     run(composeArgs(`exec -T nodesync node scripts/sync.mjs${SILENT ? " --silent" : ""}`));
     log("Nodesync dynamic sync hoàn tất; tiếp tục startup độc lập của stack.");
   } else log("SSH_SYNC_PATHS rỗng: không discover/SSH/rsync.");

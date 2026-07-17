@@ -192,7 +192,7 @@ if (nodesync.enabled && nodesync.syncOnStart) {
   await waitNodesync();
   // 3) Chờ RTDB server timestamp ổn định rồi discover predecessor.
   if (!DRY_RUN) await new Promise((done) => setTimeout(done, 3000));
-  run(compose(`exec -T orchestrator node scripts/discover-predecessor.mjs --json > ci-runtime/nodesync/predecessor.json`));
+  run(compose(`run --rm --no-deps orchestrator node scripts/discover-predecessor.mjs --json > ci-runtime/nodesync/predecessor.json`));
   // 4) Sync configured paths từ predecessor (đọc predecessor.json ở bước 3).
   run(compose(`exec -T nodesync node scripts/sync.mjs${SILENT ? " --silent" : ""}`));
   log("Nodesync pre-start hoàn tất.");
