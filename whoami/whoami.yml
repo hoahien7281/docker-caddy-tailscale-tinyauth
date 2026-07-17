@@ -30,12 +30,6 @@ services:
       WHOAMI_NAME: ${WHOAMI_NAME:-${ORCH_NODE_ID:-whoami}}
     networks:
       - proxy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:80/ || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-      start_period: 10s
     labels:
       caddy: ${CADDY_WHOAMI_HOST:-${WHOAMI_HOST:-http://whoami.${DOMAIN:-localhost}}}
       caddy.reverse_proxy: "{{upstreams 80}}"
