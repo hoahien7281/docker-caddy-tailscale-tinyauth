@@ -23,7 +23,9 @@ import { envGet, parseEnv } from "./lib/env-utils.mjs";
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes("--dry-run");
 const SILENT = args.includes("--silent");
-const log = (...a) => { if (!SILENT) console.log(...a); };
+const log = (...a) => {
+  if (!SILENT) console.log(...a);
+};
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
@@ -31,16 +33,25 @@ const ENV = resolve(ROOT, ".env");
 process.chdir(ROOT);
 
 const docker = DRY_RUN ? { available: true, cmd: "docker", via: "dry-run" } : detectDocker();
-if (!docker.available) { console.error("ERROR: Docker daemon unavailable. Start Docker or use --dry-run."); process.exit(1); }
+if (!docker.available) {
+  console.error("ERROR: Docker daemon unavailable. Start Docker or use --dry-run.");
+  process.exit(1);
+}
 const dc = (parts) => `${docker.cmd} ${parts}`;
 
 function run(cmd) {
-  if (DRY_RUN) { log(`[DRY RUN] ${cmd}`); return; }
+  if (DRY_RUN) {
+    log(`[DRY RUN] ${cmd}`);
+    return;
+  }
   execSync(cmd, { stdio: SILENT ? "ignore" : "inherit", cwd: ROOT });
 }
 
 function runPrefixed(name, cmd) {
-  if (DRY_RUN) { log(`[DRY RUN] ${cmd}`); return Promise.resolve(); }
+  if (DRY_RUN) {
+    log(`[DRY RUN] ${cmd}`);
+    return Promise.resolve();
+  }
   return new Promise((resolvePromise, reject) => {
     const proc = spawn(cmd, { cwd: ROOT, shell: true, stdio: ["ignore", "pipe", "pipe"] });
     const write = (stream, data) => {
@@ -50,7 +61,7 @@ function runPrefixed(name, cmd) {
     proc.stdout.on("data", (data) => write(process.stdout, data));
     proc.stderr.on("data", (data) => write(process.stderr, data));
     proc.on("error", reject);
-    proc.on("close", (code) => code === 0 ? resolvePromise() : reject(new Error(`${name} failed with exit code ${code}`)));
+    proc.on("close", (code) => (code === 0 ? resolvePromise() : reject(new Error(`${name} failed with exit code ${code}`))));
   });
 }
 
@@ -72,7 +83,9 @@ function getNodesyncConfig() {
   const smoke = truthy(env.SSH_SYNC_SMOKE_ENABLE);
   return {
     enabled: truthy(env.SSH_ENABLE),
-    syncOnStart: String(env.SSH_SYNC_PATHS || (smoke ? "ci-runtime/smoke-sync-data" : "")).split(",").some(Boolean),
+    syncOnStart: String(env.SSH_SYNC_PATHS || (smoke ? "ci-runtime/smoke-sync-data" : ""))
+      .split(",")
+      .some(Boolean),
     tailscale: truthy(env.SSH_CHANNEL_TAILSCALE_ENABLE ?? "1"),
     orchestratorEnabled: truthy(env.CONSUL_ENABLE),
   };
@@ -80,7 +93,10 @@ function getNodesyncConfig() {
 
 function firstIndexedName(prefix, key) {
   const env = { ...parseEnv(ENV), ...process.env };
-  const indexes = Object.keys(env).map((name) => name.match(new RegExp(`^${prefix}_(\\d+)_${key}$`))?.[1]).filter(Boolean).sort((a, b) => Number(a) - Number(b));
+  const indexes = Object.keys(env)
+    .map((name) => name.match(new RegExp(`^${prefix}_(\\d+)_${key}$`))?.[1])
+    .filter(Boolean)
+    .sort((a, b) => Number(a) - Number(b));
   if (indexes.length === 0) return "";
   const index = indexes[0];
   return `${prefix.toLowerCase()}-${index}-${env[`${prefix}_${index}_${key}`]}`.replace(/[^a-zA-Z0-9_.-]/g, "-");
@@ -101,14 +117,21 @@ function compose(command) {
   return dc(`compose ${files}${command}`);
 }
 async function waitNodesync(timeoutMs = 90_000) {
-  if (DRY_RUN) { log("[DRY RUN] chờ nodesync healthy"); return; }
+  if (DRY_RUN) {
+    log("[DRY RUN] chờ nodesync healthy");
+    return;
+  }
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const status = execSync(dc("inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' nodesync"), { encoding: "utf8" }).trim();
+      const status = execSync(dc("inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' nodesync"), {
+        encoding: "utf8",
+      }).trim();
       if (status === "healthy") return;
       if (["unhealthy", "exited"].includes(status)) throw new Error(`nodesync ${status}`);
-    } catch (e) { if (/nodesync (unhealthy|exited)/.test(e.message)) throw e; }
+    } catch (e) {
+      if (/nodesync (unhealthy|exited)/.test(e.message)) throw e;
+    }
     await new Promise((done) => setTimeout(done, 2_000));
   }
   throw new Error("nodesync không healthy sau 90s");
@@ -131,7 +154,10 @@ if (existsSync(".env") && readFileSync(".env", "utf8").includes(demoHash)) {
 // Parse args
 const nonFlagArgs = args.filter((a) => !a.startsWith("--"));
 let mode = "prod";
-if (nonFlagArgs[0] === "ci") { mode = "ci"; nonFlagArgs.shift(); }
+if (nonFlagArgs[0] === "ci") {
+  mode = "ci";
+  nonFlagArgs.shift();
+}
 
 // Set COMPOSE_PROFILES
 if (nonFlagArgs.length > 0) {
@@ -177,12 +203,20 @@ function uniqueTsHostname(base = "proxy-stack") {
   if (gh) suffix = `gh-${process.env.GITHUB_RUN_ID || ""}-${process.env.GITHUB_RUN_ATTEMPT || "1"}`;
   else if (az) suffix = `az-${process.env.BUILD_BUILDID || ""}-${process.env.SYSTEM_JOBATTEMPT || "1"}`;
   if (!suffix) return base;
-  return `${base}-${suffix}`.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 63);
+  return `${base}-${suffix}`
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 63);
 }
 if (nodesync.enabled && nodesync.tailscale) {
   process.env.TS_HOSTNAME = uniqueTsHostname(envGet(ENV, "TS_HOSTNAME") || "proxy-stack");
   const baseExtra = process.env.TS_EXTRA_ARGS || envGet(ENV, "TS_EXTRA_ARGS") || "--accept-dns=false";
-  process.env.TS_EXTRA_ARGS = baseExtra.replace(/(?:^|\s)--ssh(?:=true)?(?=\s|$)/g, " ").replace(/\s+/g, " ").trim();
+  process.env.TS_EXTRA_ARGS = baseExtra
+    .replace(/(?:^|\s)--ssh(?:=true)?(?=\s|$)/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   log(`Tailscale transport identity: hostname=${process.env.TS_HOSTNAME} extraArgs="${process.env.TS_EXTRA_ARGS}"`);
 }
 process.env.DOCKER_VOLUME_RUNTIME_ABS = resolveVolumeRoot(envGet(ENV, "DOCKER_VOLUME_RUNTIME"), "ci-runtime");
@@ -219,7 +253,10 @@ if (nodesync.enabled && nodesync.syncOnStart) {
       try {
         const out = execSync(dc("compose exec -T tailscale tailscale status --json"), { cwd: ROOT, encoding: "utf8" });
         const st = JSON.parse(out);
-        if (st?.Self?.Online || st?.BackendState === "Running") { tsReady = true; break; }
+        if (st?.Self?.Online || st?.BackendState === "Running") {
+          tsReady = true;
+          break;
+        }
       } catch {}
       await new Promise((done) => setTimeout(done, 2000));
     }
@@ -227,6 +264,16 @@ if (nodesync.enabled && nodesync.syncOnStart) {
     else {
       run(dc("compose exec tailscale tailscale serve --bg --tcp=2222 tcp://host.docker.internal:22"));
       log("Tailscale transport ready: tailnet:2222 → runner sshd:22 via userspace SOCKS5.");
+      // [YC #2] "tsReady" chỉ xác nhận CHÍNH node này online với control-plane,
+      // KHÔNG đảm bảo netmap/DERP path tới predecessor đã hội tụ xong — nhất
+      // là khi UDP bị chặn trên CI runner và WireGuard phải relay qua DERP.
+      // Chờ thêm trước khi discover/sync để giảm khả năng probe SOCKS5 CONNECT
+      // bị tailscaled từ chối tức thì ("General SOCKS server failure").
+      const meshWarmupSec = Number(process.env.TS_MESH_WARMUP_SECONDS || 8);
+      if (meshWarmupSec > 0) {
+        log(`Chờ ${meshWarmupSec}s để Tailscale netmap/DERP hội tụ trước khi sync...`);
+        await new Promise((done) => setTimeout(done, meshWarmupSec * 1000));
+      }
     }
   }
   // 3) Chờ RTDB server timestamp ổn định rồi discover predecessor.
