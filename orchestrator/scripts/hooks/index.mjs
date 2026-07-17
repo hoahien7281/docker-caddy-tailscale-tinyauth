@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { parse } from "jsonc-parser";
 import { REPO_DIR } from "../lib/docker.mjs";
-import { pushEvent, pushHandoffLog } from "../lib/rtdb.mjs";
+import { pushEvent } from "../lib/rtdb.mjs";
 import { log, error, redact } from "../lib/log.mjs";
 
 import * as stopCloudflared from "./stop-cloudflared.mjs";
@@ -81,14 +81,13 @@ function resolveStep(step) {
 }
 
 // Chạy toàn bộ pipeline handoff tuần tự.
+// Trả về mảng results (mỗi hook: { hook, ok, out?, error? }) để caller
+// (main.mjs) có thể đưa vào record handoff-log mới (1 record / lần đổi leader).
 export async function runHandoffPipeline(ctx) {
   const config = ctx.config || loadConfig();
   const steps = config.handoff_pipeline || [];
   log(`Running handoff pipeline (${steps.length} hooks) for successor=${ctx.successor}`);
   await pushEvent("handoff.pipeline_start", { successor: ctx.successor, term: ctx.term, steps });
-  await pushHandoffLog("pipeline_start", `Chạy pipeline handoff (${steps.length} hook) cho node kế nhiệm ${ctx.successor}`, {
-    to: ctx.successor, term: ctx.term, steps: steps.map((s) => (typeof s === "string" ? s : s.name || "shell")),
-  });
 
   const results = [];
   for (const rawStep of steps) {
@@ -97,30 +96,23 @@ export async function runHandoffPipeline(ctx) {
       hook = resolveStep(rawStep);
     } catch (e) {
       error(e.message);
-      await pushHandoffLog("hook_skip", `Bỏ qua hook không hợp lệ: ${e.message}`, { to: ctx.successor, term: ctx.term });
+      results.push({ hook: rawStep?.name || "unknown", ok: false, error: e.message });
       continue;
     }
-    await pushHandoffLog("hook_start", `Đang chạy hook "${hook.name}"`, { hook: hook.name, to: ctx.successor, term: ctx.term });
     try {
       const out = await hook.run(ctx);
       results.push({ hook: hook.name, ok: true, out });
-      await pushHandoffLog("hook_done", `Hook "${hook.name}" chạy xong (thành công)`, { hook: hook.name, ok: true, to: ctx.successor, term: ctx.term });
     } catch (e) {
       error(`hook ${hook.name} failed: ${e.message}`);
       results.push({ hook: hook.name, ok: false, error: e.message });
-      await pushHandoffLog("hook_fail", `Hook "${hook.name}" LỖI: ${e.message}`, { hook: hook.name, ok: false, to: ctx.successor, term: ctx.term });
       if (typeof rawStep === "object" && rawStep.critical) {
         await pushEvent("handoff.pipeline_aborted", { at: hook.name, error: e.message });
-        await pushHandoffLog("pipeline_aborted", `DỪNG pipeline: hook critical "${hook.name}" thất bại`, { hook: hook.name, to: ctx.successor, term: ctx.term });
         throw e;
       }
     }
   }
 
   await pushEvent("handoff.pipeline_done", { successor: ctx.successor, term: ctx.term, results });
-  await pushHandoffLog("pipeline_done", `Pipeline handoff hoàn tất (${results.filter((r) => r.ok).length}/${results.length} hook OK)`, {
-    to: ctx.successor, term: ctx.term,
-  });
   log("Handoff pipeline complete");
   return results;
 }

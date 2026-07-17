@@ -130,14 +130,30 @@ docker compose logs -f orchestrator
 
 ```
 orchestrator/<stack>/
-├── leader/            { nodeId, term, host, publicUrl, heartbeat, acquiredAt }
+├── leader/            { nodeId, term, host, publicUrl, heartbeat, heartbeatVi,
+│                        acquiredAt, acquiredAtVi, releasedAt, releasedAtVi }
 ├── nodes/<nodeId>/    { state, host, commit, ci{provider,runId,runner...},
-│                        startedAt, heartbeat, publicUrl, domain, meta{...} }
-├── handoff/           (dành cho mở rộng: kênh yêu cầu/ack chuyển giao)
-└── events/<pushId>    { type, at, nodeId, ... }   audit log
+│                        startedAt, startedAtVi, heartbeat, heartbeatVi,
+│                        updatedAt, updatedAtVi, stoppedAt, stoppedAtVi,
+│                        publicUrl, domain, meta{runner,runId,workflow,...} }
+├── handoff/log/<pushId>  { oldLeader, newLeader, oldLeaderTasks[], at, atVi,
+│                           term, reason }   ← 1 record / lần đổi leader thật sự
+└── events/<pushId>    { type, at, atVi, nodeId, ... }   audit log
 ```
 
 `state`: `booting → ready → serving → draining → stopped`.
+
+**Handoff log (mới):** Chỉ ghi **1 record** khi leader THẬT SỰ đổi (leader cũ ≠
+leader mới). Mỗi record chứa: leader cũ, leader mới, và các việc leader cũ đã
+làm trong pipeline handoff (`oldLeaderTasks`: upload-data, stop-cloudflared, ...).
+Lý do đổi (`reason`): `handoff` (chủ động nhường), `leader-stale` (leader cũ chết).
+
+**Giờ VN:** Mọi timestamp (`at`, `heartbeat`, `startedAt`, `acquiredAt`, ...) đều
+có cặp `*Vi` theo định dạng `yyyy-MM-dd HH:mm:ss` (giờ Việt Nam UTC+7).
+
+**Cleanup:** Log cũ (events, handoff/log, nodes đã chết) tự xoá mỗi
+`ORCH_CLEANUP_INTERVAL_SECONDS` (mặc định 1 giờ), giữ lại `ORCH_LOG_RETENTION_DAYS`
+ngày (mặc định 7).
 
 ---
 
@@ -155,6 +171,8 @@ Xem đầy đủ trong [`.env.example`](./.env.example). Quan trọng nhất:
 | `ORCH_HEARTBEAT_TTL_SECONDS` | Quá hạn → coi node chết (mặc định 90) |
 | `ORCH_META_*` | Metadata tuỳ ý ghi lên RTDB |
 | `ORCH_UPLOAD_CMD` | Lệnh upload dữ liệu tuỳ biến khi handoff |
+| `ORCH_LOG_RETENTION_DAYS` | Số ngày giữ log trong RTDB (mặc định 7, `0` = tắt cleanup) |
+| `ORCH_CLEANUP_INTERVAL_SECONDS` | Chu kỳ chạy cleanup (mặc định 3600s = 1 giờ) |
 
 ---
 

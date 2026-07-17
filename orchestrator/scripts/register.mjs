@@ -13,6 +13,7 @@
 import { connectRtdb, ServerValue, pushEvent } from "./lib/rtdb.mjs";
 import { getNodeIdentityWithTailscale } from "./lib/node-identity.mjs";
 import { getTailscaleInfo } from "./lib/tailscale-info.mjs";
+import { viTime } from "./lib/vi-time.mjs";
 import { log, error } from "./lib/log.mjs";
 
 const STATES = ["booting", "ready", "serving", "draining", "stopped"];
@@ -31,8 +32,11 @@ export async function startRegistration({ initialState = "booting" } = {}) {
     ...identity,
     state: STATES.includes(initialState) ? initialState : "booting",
     startedAt: ServerValue.TIMESTAMP,
+    startedAtVi: viTime(),
     heartbeat: ServerValue.TIMESTAMP,
+    heartbeatVi: viTime(),
     updatedAt: ServerValue.TIMESTAMP,
+    updatedAtVi: viTime(),
   };
 
   await nodeRef.set(base);
@@ -40,6 +44,7 @@ export async function startRegistration({ initialState = "booting" } = {}) {
   await nodeRef.onDisconnect().update({
     state: "stopped",
     stoppedAt: ServerValue.TIMESTAMP,
+    stoppedAtVi: viTime(),
   });
   await pushEvent("node.registered", { nodeId: identity.nodeId, state: base.state });
   log(
@@ -54,7 +59,7 @@ export async function startRegistration({ initialState = "booting" } = {}) {
 
   const timer = setInterval(() => {
     nodeRef
-      .update({ heartbeat: ServerValue.TIMESTAMP })
+      .update({ heartbeat: ServerValue.TIMESTAMP, heartbeatVi: viTime() })
       .catch((e) => error(`heartbeat failed: ${e.message}`));
   }, intervalMs());
   timer.unref?.();
@@ -65,13 +70,13 @@ export async function startRegistration({ initialState = "booting" } = {}) {
     nodeRef,
     async setState(state, extra = {}) {
       if (!STATES.includes(state)) throw new Error(`invalid state: ${state}`);
-      await nodeRef.update({ state, updatedAt: ServerValue.TIMESTAMP, ...extra });
+      await nodeRef.update({ state, updatedAt: ServerValue.TIMESTAMP, updatedAtVi: viTime(), ...extra });
       await pushEvent("node.state", { nodeId: identity.nodeId, state });
       log(`Node ${identity.nodeId} → ${state}`);
     },
     async setPublicUrl(url) {
       process.env.ORCH_PUBLIC_URL = url;
-      await nodeRef.update({ publicUrl: url, updatedAt: ServerValue.TIMESTAMP });
+      await nodeRef.update({ publicUrl: url, updatedAt: ServerValue.TIMESTAMP, updatedAtVi: viTime() });
       log(`Node ${identity.nodeId} publicUrl set`);
     },
     // Cập nhật lại thông tin Tailscale (tailnet IP thường xuất hiện sau vài giây
@@ -79,7 +84,7 @@ export async function startRegistration({ initialState = "booting" } = {}) {
     async refreshTailscale() {
       try {
         const ts = getTailscaleInfo();
-        await nodeRef.update({ tailscale: ts, updatedAt: ServerValue.TIMESTAMP });
+        await nodeRef.update({ tailscale: ts, updatedAt: ServerValue.TIMESTAMP, updatedAtVi: viTime() });
         if (ts.available) {
           log(`Node ${identity.nodeId} tailscale refreshed: ip=${ts.ip} host=${ts.hostname} ver=${ts.version} os=${ts.os}`);
         } else {

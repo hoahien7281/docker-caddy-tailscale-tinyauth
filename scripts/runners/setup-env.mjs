@@ -115,6 +115,49 @@ if (envGet(ENV, "CONSUL_ENABLE") === "1" || envGet(ENV, "SSH_ENABLE") === "1") {
   log(`Materialised shared identity ORCH_NODE_ID=WHOAMI_NAME=${nodeId}`);
 }
 
+// 5a. Sinh ORCH_META_* từ biến GitHub Actions / Azure Pipelines để ghi metadata
+// runner vào RTDB (phân biệt các runner, biết runner nào đang chạy).
+if (envGet(ENV, "CONSUL_ENABLE") === "1" || envGet(ENV, "SSH_ENABLE") === "1") {
+  // GitHub Actions: RUNNER_NAME, RUNNER_OS, RUNNER_ARCH, RUNNER_TRACKING_ID,
+  // GITHUB_RUN_ID, GITHUB_RUN_ATTEMPT, GITHUB_WORKFLOW, GITHUB_JOB, GITHUB_REF,
+  // GITHUB_REPOSITORY, GITHUB_SHA.
+  const ghMeta = {
+    RUNNER_NAME: process.env.RUNNER_NAME,
+    RUNNER_OS: process.env.RUNNER_OS,
+    RUNNER_ARCH: process.env.RUNNER_ARCH,
+    RUNNER_TRACKING_ID: process.env.RUNNER_TRACKING_ID,
+    GITHUB_RUN_ID: process.env.GITHUB_RUN_ID,
+    GITHUB_RUN_ATTEMPT: process.env.GITHUB_RUN_ATTEMPT,
+    GITHUB_WORKFLOW: process.env.GITHUB_WORKFLOW,
+    GITHUB_JOB: process.env.GITHUB_JOB,
+    GITHUB_REF: process.env.GITHUB_REF,
+    GITHUB_REPOSITORY: process.env.GITHUB_REPOSITORY,
+    GITHUB_SHA: process.env.GITHUB_SHA,
+  };
+  // Azure Pipelines fallback: AGENT_NAME, AGENT_OS, BUILD_BUILDID, ...
+  if (process.env.TF_BUILD === "True" || process.env.BUILD_BUILDID) {
+    ghMeta.RUNNER_NAME = ghMeta.RUNNER_NAME || process.env.AGENT_NAME;
+    ghMeta.RUNNER_OS = ghMeta.RUNNER_OS || process.env.AGENT_OS;
+    ghMeta.RUNNER_ARCH = ghMeta.RUNNER_ARCH || process.env.AGENT_ARCHITECTURE;
+    ghMeta.GITHUB_RUN_ID = ghMeta.GITHUB_RUN_ID || process.env.BUILD_BUILDID;
+    ghMeta.GITHUB_RUN_ATTEMPT = ghMeta.GITHUB_RUN_ATTEMPT || process.env.SYSTEM_JOBATTEMPT;
+    ghMeta.GITHUB_WORKFLOW = ghMeta.GITHUB_WORKFLOW || process.env.BUILD_DEFINITIONNAME;
+    ghMeta.GITHUB_JOB = ghMeta.GITHUB_JOB || process.env.SYSTEM_JOBDISPLAYNAME;
+    ghMeta.GITHUB_REF = ghMeta.GITHUB_REF || process.env.BUILD_SOURCEBRANCH;
+    ghMeta.GITHUB_REPOSITORY = ghMeta.GITHUB_REPOSITORY || process.env.BUILD_REPOSITORY_NAME;
+    ghMeta.GITHUB_SHA = ghMeta.GITHUB_SHA || process.env.BUILD_SOURCEVERSION;
+  }
+  for (const [k, v] of Object.entries(ghMeta)) {
+    if (v === undefined || v === "") continue;
+    const metaKey = `ORCH_META_${k}`;
+    if (!envGet(ENV, metaKey)) {
+      if (!DRY_RUN) envAppend(`${metaKey}=${v}`);
+    }
+    appendEnv(metaKey, v);
+  }
+  log(`Sinh ORCH_META_* từ CI runner vars (runner=${ghMeta.RUNNER_NAME || "n/a"})`);
+}
+
 // 5. Summary
 if (GITHUB_STEP_SUMMARY) {
   appendFileSync(GITHUB_STEP_SUMMARY, `## Environment\n\n- Mode: ${ENV_FILE && envGet(ENV, "CF_TUNNEL_TOKEN") ? "named" : "quick"}\n- Profiles: ${envGet(ENV, "COMPOSE_PROFILES")}\n\n`);

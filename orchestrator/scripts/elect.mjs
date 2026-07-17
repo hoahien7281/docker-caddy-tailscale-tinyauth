@@ -11,6 +11,7 @@
 
 import { connectRtdb } from "./lib/rtdb.mjs";
 import { heartbeatTtlMs } from "./lib/node-identity.mjs";
+import { viTime } from "./lib/vi-time.mjs";
 import { log } from "./lib/log.mjs";
 
 function now() {
@@ -35,6 +36,7 @@ export async function tryAcquire({ nodeId, host, publicUrl }) {
 
   const result = await ref.transaction((current) => {
     const t = now();
+    const tVi = viTime(t);
     if (!current || !current.nodeId) {
       // Chưa có leader → giành ngay, term = 1.
       return {
@@ -43,12 +45,14 @@ export async function tryAcquire({ nodeId, host, publicUrl }) {
         host: valueOrNull(host),
         publicUrl: valueOrNull(publicUrl),
         acquiredAt: t,
+        acquiredAtVi: tVi,
         heartbeat: t,
+        heartbeatVi: tVi,
       };
     }
     if (current.nodeId === nodeId) {
       // Mình đang là leader → renew.
-      return { ...current, heartbeat: t, publicUrl: valueOrNull(publicUrl || current.publicUrl) };
+      return { ...current, heartbeat: t, heartbeatVi: tVi, publicUrl: valueOrNull(publicUrl || current.publicUrl) };
     }
     const stale = t - (current.heartbeat || 0) > ttl;
     if (stale) {
@@ -59,7 +63,9 @@ export async function tryAcquire({ nodeId, host, publicUrl }) {
         host: valueOrNull(host),
         publicUrl: valueOrNull(publicUrl),
         acquiredAt: t,
+        acquiredAtVi: tVi,
         heartbeat: t,
+        heartbeatVi: tVi,
       };
     }
     // Leader còn sống → abort transaction (giữ nguyên).
@@ -86,21 +92,24 @@ export async function renewLeadership({ nodeId, publicUrl }) {
   const current = snap.val();
   if (!current || current.nodeId !== nodeId) return { held: false, leader: current };
   const heartbeat = now();
+  const heartbeatVi = viTime(heartbeat);
   await ref.update({
     heartbeat,
+    heartbeatVi,
     publicUrl: valueOrNull(publicUrl || current.publicUrl),
   });
-  return { held: true, leader: { ...current, heartbeat } };
+  return { held: true, leader: { ...current, heartbeat, heartbeatVi } };
 }
 
 // Chủ động nhường ghế (dùng trong graceful handoff).
 export async function releaseLeadership({ nodeId }) {
   const { db, paths } = connectRtdb();
   const ref = db.ref(paths.leader);
+  const nowMs = now();
   await ref.transaction((current) => {
     if (!current || current.nodeId !== nodeId) return;
     // Đặt heartbeat=0 để node kế tiếp thấy "stale" và tiếp quản ngay.
-    return { ...current, heartbeat: 0, releasedAt: now() };
+    return { ...current, heartbeat: 0, releasedAt: nowMs, releasedAtVi: viTime(nowMs) };
   });
   log(`Released leadership: node=${nodeId}`);
 }

@@ -22,6 +22,7 @@ import { runHandoffPipeline, loadConfig } from "./hooks/index.mjs";
 import { isRunning } from "./lib/docker.mjs";
 import { log, warn, error } from "./lib/log.mjs";
 import { monitorLeaderWhoami } from "./lib/leader-whoami-monitor.mjs";
+import { cleanupOldLogs, cleanupIntervalMs, retentionDays } from "./lib/cleanup.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -135,6 +136,18 @@ async function main() {
   log(`Sidecar starting. node=${identity.nodeId} host=${identity.host} ci=${identity.ci.provider}`);
   const reg = await startRegistration({ initialState: "booting" });
 
+  // [YC cleanup] Xoá log cũ trong RTDB (events/handoff-log/nodes đã chết).
+  // Chạy 1 lần lúc start + định kỳ mỗi ORCH_CLEANUP_INTERVAL_SECONDS.
+  const retention = retentionDays();
+  log(`Log retention: ${retention > 0 ? `${retention} ngày` : "tắt (ORCH_LOG_RETENTION_DAYS=0)"}`);
+  if (retention > 0) {
+    cleanupOldLogs().catch((e) => warn(`cleanup at start failed: ${e.message}`));
+    const cleanupTimer = setInterval(() => {
+      cleanupOldLogs().catch((e) => warn(`cleanup periodic failed: ${e.message}`));
+    }, cleanupIntervalMs());
+    cleanupTimer.unref?.();
+  }
+
   // Bước 2: chờ stack local ready.
   const ready = await waitStackReady({ timeoutSec: num("ORCH_READY_TIMEOUT_SECONDS", 180) });
   if (!ready) {
@@ -200,6 +213,17 @@ async function main() {
           await pushEvent("leader.acquired", { term, nodeId: identity.nodeId });
           log(`Now LEADER (term=${term}). Serving traffic.`);
           await logElectionSnapshot("leader-acquired", { self: identity.nodeId, term });
+          // Nếu trước đó có leader khác (blockedBy.nodeId) → đây là lần đổi
+          // leader thật sự → ghi 1 record handoff-log (reason=leader-stale).
+          if (blockedBy?.nodeId && blockedBy.nodeId !== identity.nodeId) {
+            await pushHandoffLog({
+              oldLeader: { nodeId: blockedBy.nodeId, host: blockedBy.host || null, term: blockedBy.term ?? null },
+              newLeader: { nodeId: identity.nodeId, host: identity.host, term: t },
+              oldLeaderTasks: [], // leader cũ đã chết, không chạy pipeline
+              reason: "leader-stale",
+              term: t,
+            });
+          }
           const whoamiUrl = process.env.ORCH_PUBLIC_URL || process.env.WHOAMI_HOST || (process.env.DOMAIN ? `https://whoami.${process.env.DOMAIN}` : "");
           monitorLeaderWhoami({ getLeader, selfId: identity.nodeId, url: whoamiUrl, log, warn }).catch((e) => warn(`[leader-whoami] monitor error: ${e.message}`));
         } else if (blockedBy?.nodeId) {
@@ -237,27 +261,25 @@ async function main() {
       handoffDone = true;
       log(`Handoff triggered → successor=${successor.id} (overTime=${overTime})`);
       await logElectionSnapshot("handoff-begin", { self: identity.nodeId, successor: successor.id, successorNode: successor.node, term, overTime });
-      await pushHandoffLog("begin", `Bắt đầu chuyển giao từ ${identity.nodeId} sang ${successor.id} (quáGiờ=${overTime}, term=${term})`, {
-        from: identity.nodeId, to: successor.id, term, overTime,
-      });
       await reg.setState("draining");
       await pushEvent("handoff.begin", { successor: successor.id, term });
 
+      // Snapshot leader cũ TRƯỚC khi nhường ghế (để ghi vào record handoff-log).
+      const oldLeaderSnapshot = await getLeader();
+
       // [YC②] chạy pipeline: upload dữ liệu, stop cloudflared (nhường tunnel)...
+      let pipelineResults = [];
       try {
-        await runHandoffPipeline({
+        pipelineResults = await runHandoffPipeline({
           role: "leader",
           self: identity,
           successor: successor.id,
           term,
-          leader: await getLeader(),
+          leader: oldLeaderSnapshot,
           config,
         });
       } catch (e) {
         error(`handoff pipeline critical error: ${e.message}; HỦY handoff, giữ leadership`);
-        await pushHandoffLog("pipeline_error", `Pipeline handoff lỗi critical: ${e.message}; hủy chuyển giao và giữ leader`, {
-          from: identity.nodeId, to: successor.id, term,
-        });
         await pushEvent("handoff.aborted", { successor: successor.id, term, error: e.message });
         await reg.setState("serving");
         handoffDone = false;
@@ -268,18 +290,29 @@ async function main() {
       // Chỉ nhường ghế khi pipeline không có critical failure.
       log(`Releasing leadership for successor=${successor.id}. Current leader before release: ${describeLeader(await getLeader())}`);
       await logElectionSnapshot("handoff-before-release", { self: identity.nodeId, successor: successor.id, term });
-      await pushHandoffLog("release", `Nhả ghế leader để ${successor.id} tiếp quản (term hiện tại=${term})`, {
-        from: identity.nodeId, to: successor.id, term,
-      });
       await releaseLeadership({ nodeId: identity.nodeId });
       await reg.setState("stopped");
       isLeader = false;
-      log(`Handoff complete. Released term=${term}; successor=${successor.id} should acquire on next poll.`);
-      await logElectionSnapshot("handoff-complete", { self: identity.nodeId, successor: successor.id, term });
-      await pushHandoffLog("complete", `Hoàn tất chuyển giao: ${identity.nodeId} đã nhả ghế, ${successor.id} sẽ giành leader ở vòng poll kế tiếp`, {
-        from: identity.nodeId, to: successor.id, term,
+
+      // Ghi 1 record handoff-log: leader đã đổi (old → new sẽ lấy sau khi
+      // successor acquire ở vòng poll kế tiếp). Ta dùng successor làm "newLeader"
+      // dự kiến; nếu muốn chính xác, có thể cập nhật sau khi successor thực sự
+      // lên. Nhưng vì đã release → successor chắc chắn sẽ acquire → dùng ngay.
+      const oldLeaderTasks = pipelineResults.map((r) => ({
+        hook: r.hook,
+        ok: r.ok,
+        error: r.error || undefined,
+      }));
+      await pushHandoffLog({
+        oldLeader: { nodeId: identity.nodeId, host: identity.host, term },
+        newLeader: { nodeId: successor.id, host: successor.node?.host || null, term: term + 1 },
+        oldLeaderTasks,
+        reason: "handoff",
+        term: term + 1,
       });
       await pushEvent("handoff.complete", { successor: successor.id, term });
+      log(`Handoff complete. Released term=${term}; successor=${successor.id} should acquire on next poll.`);
+      await logElectionSnapshot("handoff-complete", { self: identity.nodeId, successor: successor.id, term });
       // Sau khi nhường, container sidecar có thể tự thoát để job kết thúc gọn.
       if (process.env.ORCH_EXIT_AFTER_HANDOFF === "1") process.exit(0);
     }

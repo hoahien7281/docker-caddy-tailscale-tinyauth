@@ -13,6 +13,7 @@ import { readFileSync } from "node:fs";
 import { initializeApp, cert } from "firebase-admin/app";
 import { getDatabase } from "firebase-admin/database";
 import { log, error } from "./log.mjs";
+import { viTime } from "./vi-time.mjs";
 
 function loadServiceAccount() {
   const b64 = process.env.ORCH_RTDB_SERVICE_ACCOUNT;
@@ -64,7 +65,9 @@ export function connectRtdb() {
     nodes: `${base}/nodes`,
     node: (id) => `${base}/nodes/${id}`,
     handoff: `${base}/handoff`,
-    handoffLog: `${base}/handoff/log`, // nhật ký chuyển giao (timeline append)
+    // nhật ký chuyển giao: 1 record / lần đổi leader thật sự (không phải timeline
+    // nhiều pha). Mỗi record: { oldLeader, newLeader, oldLeaderTasks, at, atVi, term }.
+    handoffLog: `${base}/handoff/log`,
     events: `${base}/events`,
   };
 
@@ -76,14 +79,16 @@ export function connectRtdb() {
 // serverTimestamp helper (ghi giờ theo server RTDB, tránh lệch giờ runner)
 export { ServerValue } from "firebase-admin/database";
 
-// Ghi 1 event vào audit log /events (push, kèm timestamp).
+// Ghi 1 event vào audit log /events (push, kèm timestamp + giờ VN).
 export async function pushEvent(type, data = {}) {
   try {
     const { db, paths } = connectRtdb();
     const { ServerValue } = await import("firebase-admin/database");
+    const atVi = viTime();
     await db.ref(paths.events).push({
       type,
       at: ServerValue.TIMESTAMP,
+      atVi,
       nodeId: process.env.ORCH_NODE_ID || null,
       ...data,
     });
@@ -92,27 +97,52 @@ export async function pushEvent(type, data = {}) {
   }
 }
 
-// Ghi 1 dòng NHẬT KÝ CHUYỂN GIAO vào /handoff/log (timeline, append theo push).
-// Phục vụ yêu cầu Phần 1 #2: "ghi nhận nhật ký chuyển giao giữa 2 runner vào
-// rtdb để xem log thực thi có đúng không".
+// Ghi 1 record CHUYỂN GIAO LEADER vào /handoff/log.
 //
-//   phase   : mã pha (vd "begin", "pipeline_start", "hook", "release", "complete")
-//   messageVi : diễn giải tiếng Việt ngắn gọn bước này
-//   data    : context thêm (from, to, term, hook, ok...)
-export async function pushHandoffLog(phase, messageVi, data = {}) {
+// YÊU CẦU: chỉ lưu 1 record khi leader THẬT SỰ đổi (leader cũ ≠ leader mới).
+// Record gồm: { oldLeader, newLeader, oldLeaderTasks, at, atVi, term }.
+//
+//   oldLeader      : { nodeId, host, term } — leader trước khi đổi
+//   newLeader      : { nodeId, host, term } — leader sau khi đổi
+//   oldLeaderTasks : mảng kết quả pipeline mà leader cũ đã chạy trong lần
+//                    handoff này (upload-data, stop-cloudflared, ...). Rỗng
+//                    nếu leader đổi do chết/tín hiệu chứ không phải handoff chủ động.
+//   term           : term của leader mới (fencing token)
+//   reason         : "handoff" | "leader-stale" | "signal" | "acquire-empty"
+//
+// Nếu oldLeader.nodeId === newLeader.nodeId thì KHÔNG ghi (không có thay đổi
+// thật sự) → tránh noise như cũ.
+export async function pushHandoffLog({ oldLeader, newLeader, oldLeaderTasks = [], reason = "handoff", term }) {
   try {
     const { db, paths } = connectRtdb();
     const { ServerValue } = await import("firebase-admin/database");
+    const oldId = oldLeader?.nodeId || null;
+    const newId = newLeader?.nodeId || null;
+    if (oldId && newId && oldId === newId) {
+      // Không có thay đổi leader thật sự → bỏ qua (tránh noise).
+      return null;
+    }
     const entry = {
-      phase,
-      messageVi,
+      oldLeader: oldId
+        ? { nodeId: oldId, host: oldLeader?.host || null, term: oldLeader?.term ?? null }
+        : null,
+      newLeader: newId
+        ? { nodeId: newId, host: newLeader?.host || null, term: newLeader?.term ?? null }
+        : null,
+      oldLeaderTasks,
+      reason,
+      term: term ?? newLeader?.term ?? null,
       at: ServerValue.TIMESTAMP,
+      atVi: viTime(),
       nodeId: process.env.ORCH_NODE_ID || null,
-      ...data,
     };
-    await db.ref(paths.handoffLog).push(entry);
-    log(`Handoff log ← [${phase}] ${messageVi}`);
+    const ref = await db.ref(paths.handoffLog).push(entry);
+    log(
+      `Handoff log ← leader đổi ${oldId || "(none)"} → ${newId || "(none)"} (reason=${reason}, term=${entry.term}, tasks=${oldLeaderTasks.length})`,
+    );
+    return ref.key;
   } catch (e) {
-    error(`pushHandoffLog(${phase}) failed: ${e.message}`);
+    error(`pushHandoffLog failed: ${e.message}`);
+    return null;
   }
 }
