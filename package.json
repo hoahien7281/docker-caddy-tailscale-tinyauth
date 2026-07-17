@@ -21,6 +21,8 @@
     "litestream:restore": "node litestream/scripts/restore.mjs",
     "rclone:pull": "node rclone/scripts/pull.mjs",
     "ssh:env": "node nodesync/scripts/ssh-setup-env.mjs --env .env.dockercaddytailscaletinyauth",
+    "ssh:key-acl": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$p='.secret/nodesync_id_ed25519'; $u=[System.Security.Principal.WindowsIdentity]::GetCurrent().Name; icacls $p /inheritance:r; icacls $p /grant:r \\\"$u`:F\\\"; icacls $p /remove:g Users 'Authenticated Users' Everyone 2>$null\"",
+    "pressh:nodesync": "npm run ssh:key-acl",
     "ssh:nodesync": "ssh -i .secret/nodesync_id_ed25519 -o IdentitiesOnly=yes -o PubkeyAuthentication=yes -o PasswordAuthentication=yes -o ProxyCommand=\"cloudflared access ssh --hostname ssh.dockercaddytailscaletinyauth.dpdns.org\" nodesync@ssh.dockercaddytailscaletinyauth.dpdns.org",
     "provision": "node cloudflare/scripts/provision-tunnel.mjs --env .env.dockercaddytailscaletinyauth",
     "ts-status": "node tailscale/scripts/status.mjs",

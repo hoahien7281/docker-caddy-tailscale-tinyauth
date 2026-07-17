@@ -13,7 +13,10 @@ const ROOT = resolve(__dirname, "..");
 process.chdir(ROOT);
 
 const docker = detectDocker();
-if (!docker.available) { console.error("ERROR: Docker not found."); process.exit(1); }
+if (!docker.available) {
+  console.error("ERROR: Docker not found.");
+  process.exit(1);
+}
 
 const ENV = resolve(ROOT, ".env");
 
@@ -22,17 +25,39 @@ const INTERVAL = 5;
 const ACCEPT_RE = /^(200|301|302|307|401|403)$/;
 
 function sh(cmd) {
-  try { return execSync(cmd, { cwd: ROOT, stdio: ["pipe", "pipe", "pipe"] }).toString().trim(); }
-  catch { return ""; }
+  try {
+    return execSync(cmd, { cwd: ROOT, stdio: ["pipe", "pipe", "pipe"] })
+      .toString()
+      .trim();
+  } catch {
+    return "";
+  }
 }
 
-function httpCode(url) {
+// HTTP probe bằng fetch native (Node 18+), không phụ thuộc binary curl.
+// Giữ hành vi cũ: no redirect follow, timeout 20s, lưu body ra /tmp để in sau.
+async function httpCode(url) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20000);
   try {
-    const code = execSync(`curl -sS -o /tmp/proxy-stack-body.txt -w '%{http_code}' --max-time 20 "${url}"`, {
-      cwd: ROOT, stdio: ["pipe", "pipe", "pipe"], timeout: 25000,
-    }).toString().trim();
+    const res = await fetch(url, { redirect: "manual", signal: ctrl.signal });
+    let body = "";
+    try {
+      body = await res.text();
+    } catch {}
+    try {
+      writeFileSync("/tmp/proxy-stack-body.txt", body);
+    } catch {}
+    // Node cũ có thể trả "opaqueredirect" với status=0 khi gặp 3xx và redirect:"manual".
+    // Chuẩn hóa về "302" để ACCEPT_RE (301|302|307) vẫn coi redirect là hợp lệ.
+    if (res.type === "opaqueredirect") return "302";
+    const code = String(res.status);
     return /^\d{3}$/.test(code) ? code : "000";
-  } catch { return "000"; }
+  } catch {
+    return "000";
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ── Wait for core containers ─────────────────────────────────────
@@ -52,10 +77,14 @@ const running = sh(dockerCmd("compose ps --status running --services"));
 const missing = ["caddy", "whoami", "cloudflared"].filter((s) => !running.split("\n").includes(s));
 if (missing.length > 0) {
   console.error(`ERROR: required services not running: ${missing.join(", ")}`);
-  try { execSync(dockerCmd("compose ps -a"), { stdio: "inherit", cwd: ROOT }); } catch {}
+  try {
+    execSync(dockerCmd("compose ps -a"), { stdio: "inherit", cwd: ROOT });
+  } catch {}
   for (const svc of missing) {
     console.error(`--- logs: ${svc} ---`);
-    try { execSync(dockerCmd(`compose logs --no-color --tail=80 ${svc}`), { stdio: "inherit", cwd: ROOT }); } catch {}
+    try {
+      execSync(dockerCmd(`compose logs --no-color --tail=80 ${svc}`), { stdio: "inherit", cwd: ROOT });
+    } catch {}
   }
   process.exit(1);
 }
@@ -65,7 +94,7 @@ console.log("==> Probing local Caddy (host port)...");
 let localOk = false;
 for (const port of [8080, 80]) {
   for (let i = 0; i < 24; i++) {
-    const code = httpCode(`http://127.0.0.1:${port}/`);
+    const code = await httpCode(`http://127.0.0.1:${port}/`);
     if (ACCEPT_RE.test(code)) {
       console.log(`    localhost:${port} → HTTP ${code}`);
       localOk = true;
@@ -77,8 +106,12 @@ for (const port of [8080, 80]) {
 }
 if (!localOk) {
   console.log("WARN: local Caddy not ready on :8080/:80 (continuing with public tunnel check)");
-  try { execSync(dockerCmd("compose logs --no-color --tail=60 caddy"), { stdio: "inherit", cwd: ROOT }); } catch {}
-  try { execSync(dockerCmd("compose logs --no-color --tail=40 whoami"), { stdio: "inherit", cwd: ROOT }); } catch {}
+  try {
+    execSync(dockerCmd("compose logs --no-color --tail=60 caddy"), { stdio: "inherit", cwd: ROOT });
+  } catch {}
+  try {
+    execSync(dockerCmd("compose logs --no-color --tail=40 whoami"), { stdio: "inherit", cwd: ROOT });
+  } catch {}
 }
 
 // ── Discover public URL ──────────────────────────────────────────
@@ -109,11 +142,17 @@ if (!publicUrl) {
     const extractTimeout = Math.min(TIMEOUT, 120);
     try {
       publicUrl = execSync(`node "${cfExtract}" ${extractTimeout} ${INTERVAL}`, {
-        cwd: ROOT, stdio: ["pipe", "pipe", "pipe"], timeout: (extractTimeout + 10) * 1000,
-      }).toString().trim();
+        cwd: ROOT,
+        stdio: ["pipe", "pipe", "pipe"],
+        timeout: (extractTimeout + 10) * 1000,
+      })
+        .toString()
+        .trim();
     } catch {
       console.error("ERROR: failed to extract trycloudflare.com URL");
-      try { execSync(dockerCmd("compose logs --no-color cloudflared"), { stdio: "inherit", cwd: ROOT }); } catch {}
+      try {
+        execSync(dockerCmd("compose logs --no-color cloudflared"), { stdio: "inherit", cwd: ROOT });
+      } catch {}
       process.exit(1);
     }
   } else {
@@ -124,8 +163,12 @@ if (!publicUrl) {
 
 if (!publicUrl) {
   console.error("ERROR: could not determine PUBLIC_URL");
-  try { execSync(dockerCmd("compose logs --no-color cloudflared"), { stdio: "inherit", cwd: ROOT }); } catch {}
-  try { execSync(dockerCmd("compose logs --no-color --tail=80 caddy"), { stdio: "inherit", cwd: ROOT }); } catch {}
+  try {
+    execSync(dockerCmd("compose logs --no-color cloudflared"), { stdio: "inherit", cwd: ROOT });
+  } catch {}
+  try {
+    execSync(dockerCmd("compose logs --no-color --tail=80 caddy"), { stdio: "inherit", cwd: ROOT });
+  } catch {}
   process.exit(1);
 }
 
@@ -136,26 +179,50 @@ console.log("==> Verifying external HTTP access (no redirect follow)...");
 let extOk = false;
 let lastCode = "000";
 for (let i = 1; i <= 36; i++) {
-  lastCode = httpCode(`${publicUrl}/`);
+  lastCode = await httpCode(`${publicUrl}/`);
   console.log(`    attempt ${i}: HTTP ${lastCode}`);
-  if (ACCEPT_RE.test(lastCode)) { extOk = true; break; }
+  if (ACCEPT_RE.test(lastCode)) {
+    extOk = true;
+    break;
+  }
 
-  // Debug probe at attempts 6 and 18
+  // Debug probe at attempts 6 and 18: kiem tra origin http://caddy:80 TU TRONG
+  // network proxy. Dung \`compose exec cloudflared\` (container da o san trong
+  // network proxy) chay wget — khong can pull image curl tu ngoai.
   if (i === 6 || i === 18) {
     console.log("    (debug) probe http://caddy:80 from proxy network:");
     try {
-      execSync(dockerCmd('run --rm --network proxy curlimages/curl:8.5.0 -sS -o /dev/null -w "caddy_origin HTTP %{http_code}\\n" --max-time 10 http://caddy:80/'), { stdio: "inherit", cwd: ROOT });
-    } catch { console.log("    (debug) origin probe failed"); }
+      const out = execSync(dockerCmd("compose exec -T cloudflared wget -q -S -O /dev/null http://caddy:80/"), {
+        cwd: ROOT,
+        stdio: ["pipe", "pipe", "pipe"],
+        timeout: 15000,
+      }).toString();
+      const m = out.match(/HTTP\/\S+\s+(\d{3})/);
+      console.log(`    (debug) caddy_origin HTTP ${m ? m[1] : "unknown"}`);
+    } catch (e) {
+      const err = ((e && e.stderr) || "").toString();
+      const m = err.match(/HTTP\/\S+\s+(\d{3})/);
+      if (m) console.log(`    (debug) caddy_origin HTTP ${m[1]}`);
+      else console.log("    (debug) origin probe failed");
+    }
   }
   execSync("sleep 5", { stdio: "ignore" });
 }
 
 if (!extOk) {
   console.error(`ERROR: public URL did not become reachable (last HTTP ${lastCode})`);
-  try { execSync(dockerCmd("compose logs --no-color cloudflared"), { stdio: "inherit", cwd: ROOT }); } catch {}
-  try { execSync(dockerCmd("compose logs --no-color --tail=100 caddy"), { stdio: "inherit", cwd: ROOT }); } catch {}
-  try { execSync(dockerCmd("compose logs --no-color --tail=50 whoami"), { stdio: "inherit", cwd: ROOT }); } catch {}
-  try { execSync(dockerCmd("compose logs --no-color --tail=40 tinyauth"), { stdio: "inherit", cwd: ROOT }); } catch {}
+  try {
+    execSync(dockerCmd("compose logs --no-color cloudflared"), { stdio: "inherit", cwd: ROOT });
+  } catch {}
+  try {
+    execSync(dockerCmd("compose logs --no-color --tail=100 caddy"), { stdio: "inherit", cwd: ROOT });
+  } catch {}
+  try {
+    execSync(dockerCmd("compose logs --no-color --tail=50 whoami"), { stdio: "inherit", cwd: ROOT });
+  } catch {}
+  try {
+    execSync(dockerCmd("compose logs --no-color --tail=40 tinyauth"), { stdio: "inherit", cwd: ROOT });
+  } catch {}
   process.exit(1);
 }
 
