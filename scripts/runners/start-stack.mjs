@@ -7,6 +7,7 @@
 //   --dry-run   Show commands without running
 //   --silent    Suppress output
 import { execSync, spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { detectDocker } from "./_docker.mjs";
@@ -161,6 +162,27 @@ async function waitForTailscale(timeoutMs = 60_000) {
   }
   return false;
 }
+function predecessorTailnetHost(file) {
+  if (DRY_RUN) return "";
+  try {
+    const source = JSON.parse(readFileSync(file, "utf8"))?.source;
+    const host = source?.tailscale?.dnsName?.replace(/\.$/, "") || source?.tailscale?.ip || "";
+    return /^[a-zA-Z0-9_.:-]+$/.test(host) ? host : "";
+  } catch {
+    return "";
+  }
+}
+function warmTailscalePeer(file, hasFallback) {
+  const host = predecessorTailnetHost(file);
+  if (!host) return;
+  try {
+    run(dc(`exec tailscale tailscale ping --c=1 ${host}`));
+  } catch {
+    const msg = `Tailscale peer ${host} chưa reachable; `;
+    if (!hasFallback) throw new Error(`${msg}không có channel fallback`);
+    err(`WARN: ${msg}sẽ thử Cloudflare/Hybrid fallback.`);
+  }
+}
 
 // chmod scripts
 try {
@@ -280,6 +302,7 @@ if (nodesync.enabled) {
     // danh sách predecessor candidate.
     run(composeArgs(`run --rm --no-deps orchestrator node scripts/discover-predecessor.mjs --json > ci-runtime/nodesync/predecessor.json`));
     log("Nodesync predecessor manifest ready.");
+    if (nodesync.tailscaleChannel) warmTailscalePeer(resolve(ROOT, "ci-runtime/nodesync/predecessor.json"), nodesync.cloudflareChannel || nodesync.hybridChannel);
     // rsync: sync.mjs sẽ ghi cờ ci-runtime/nodesync/sync-ok khi xong → orchestrator
     // (đang chờ ở sync-gate) mới được phép giành leader.
     run(composeArgs(`exec -T nodesync node scripts/sync.mjs${SILENT ? " --silent" : ""}`));

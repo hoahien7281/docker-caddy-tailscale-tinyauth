@@ -136,6 +136,25 @@ async function waitNodesync(timeoutMs = 90_000) {
   }
   throw new Error("nodesync không healthy sau 90s");
 }
+function predecessorTailnetHost(file) {
+  if (DRY_RUN) return "";
+  try {
+    const source = JSON.parse(readFileSync(file, "utf8"))?.source;
+    const host = source?.tailscale?.dnsName?.replace(/\.$/, "") || source?.tailscale?.ip || "";
+    return /^[a-zA-Z0-9_.:-]+$/.test(host) ? host : "";
+  } catch {
+    return "";
+  }
+}
+function warmTailscalePeer(file) {
+  const host = predecessorTailnetHost(file);
+  if (!host) return;
+  try {
+    run(dc(`compose exec tailscale tailscale ping --c=1 ${host}`));
+  } catch {
+    log(`WARN: Tailscale peer ${host} chưa reachable; sync.mjs sẽ thử fallback nếu bật.`);
+  }
+}
 
 // Validate .env
 if (!existsSync(".env")) {
@@ -281,6 +300,7 @@ if (nodesync.enabled && nodesync.syncOnStart) {
   log("Discovering nodesync predecessor...");
   run(compose(`run --rm --no-deps orchestrator node scripts/discover-predecessor.mjs --json > ci-runtime/nodesync/predecessor.json`));
   log("Nodesync predecessor manifest ready.");
+  if (nodesync.tailscale) warmTailscalePeer(resolve(ROOT, "ci-runtime/nodesync/predecessor.json"));
   // 4) Sync configured paths từ predecessor (đọc predecessor.json ở bước 3).
   //    sync.mjs ghi cờ ci-runtime/nodesync/sync-ok → orchestrator (sync-gate)
   //    mới được giành leader. rsync XONG rồi mới tới lượt cloudflared connect.

@@ -56,7 +56,7 @@ function renderServe(services, tailnet, eol = "\n") {
       web[`${name}.${tailnet}:443`] = { Handlers: { "/": { Proxy: svc.upstream } } };
     }
   }
-  return `${JSON.stringify({ TCP: { 443: { HTTPS: true } }, Web: web }, null, 2)}${eol}`;
+  return `${JSON.stringify({ TCP: { 443: { HTTPS: true }, 2222: { TCPForward: "host.docker.internal:22" } }, Web: web }, null, 2)}${eol}`;
 }
 
 function mergeTagOwners(policy, requiredTags, owners) {
