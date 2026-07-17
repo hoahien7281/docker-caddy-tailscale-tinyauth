@@ -35,7 +35,7 @@ function tailscaleExec(args, timeout = 12000) {
 export function resolveTailscale(peer) {
   const want = (peer.tailscaleHost || "").replace(/\.$/, "").toLowerCase();
   if (!want || !safeHost(want)) {
-    return { channel: "tailscale", host: null, reason: "NODESYNC_PEER_TAILSCALE_HOST trống hoặc không hợp lệ" };
+    return { channel: "tailscale", host: null, reason: "SSH_PEER_TAILSCALE_HOST trống hoặc không hợp lệ" };
   }
 
   const status = tailscaleExec(["status", "--json"]);
@@ -67,7 +67,7 @@ export function resolveTailscale(peer) {
 
 export function resolveCloudflare(peer) {
   if (!peer.cloudflareHost || !safeHost(peer.cloudflareHost)) {
-    return { channel: "cloudflare", host: null, reason: "NODESYNC_PEER_CLOUDFLARE_HOST trống hoặc không hợp lệ" };
+    return { channel: "cloudflare", host: null, reason: "SSH_PEER_CLOUDFLARE_HOST trống hoặc không hợp lệ" };
   }
   const has = run("sh", ["-lc", "command -v cloudflared"], { timeout: 8000 });
   if (!has.ok) return { channel: "cloudflare", host: null, reason: "không tìm thấy binary cloudflared" };
@@ -81,7 +81,7 @@ export function resolveCloudflare(peer) {
 
 export function resolveHybrid(peer) {
   if (!peer.directHost || !safeHost(peer.directHost)) {
-    return { channel: "hybrid", host: null, reason: "NODESYNC_PEER_HOST trống hoặc không hợp lệ" };
+    return { channel: "hybrid", host: null, reason: "SSH_PEER_HOST trống hoặc không hợp lệ" };
   }
   return { channel: "hybrid", host: peer.directHost, reason: null };
 }

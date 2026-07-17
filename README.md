@@ -76,7 +76,7 @@ COMPOSE_PROFILES=core
 `litestream` và `rclone` không cần thêm vào `COMPOSE_PROFILES` khi dùng
 `node scripts/up.mjs` hoặc CI: helper tự bật nếu `.env` có
 `LITESTREAM_<index>_SERVICE` hoặc `RCLONE_<index>_NAME`. Nodesync độc lập với hai
-luồng này: khi `SSH_ENABLE=1` và `NODESYNC_SYNC_PATHS` không rỗng, runner tự
+luồng này: khi `SSH_ENABLE=1` và `SSH_SYNC_PATHS` không rỗng, runner tự
 bootstrap sshd trên host, tìm predecessor theo `startedAt` RTDB và sync paths đã
 opt-in qua Tailscale → Cloudflare → Hybrid. Mặc định paths rỗng nên không SSH hay
 thay đổi dữ liệu. Xem `nodesync/README.md`.
@@ -148,7 +148,7 @@ Root `.env.example` = minimal keys the compose files actually use.
 | [`tailscale/.env.example`](tailscale/.env.example) | all `TS_*` Docker params |
 | [`networks/.env.example`](networks/.env.example) | network knobs (mostly hard-coded) |
 | [`orchestrator/.env.example`](orchestrator/.env.example) | `ORCH_*` RTDB leader/handoff sidecar |
-| [`nodesync/.env.example`](nodesync/.env.example) | `SSH_*` / `NODESYNC_*` data-sync sidecar |
+| [`nodesync/.env.example`](nodesync/.env.example) | `SSH_*` data-sync sidecar |
 
 Copy **only** keys you need from a catalog into root `.env` (with real values).  
 Do **not** copy blank lines like `TINYAUTH_SERVER_SOCKETPATH=` — empty optional env can prevent Tinyauth/Caddy from starting (same risk in prod and CI).

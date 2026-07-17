@@ -1,76 +1,27 @@
 #!/usr/bin/env node
-// Bootstrap OpenSSH trên CI runner, hoàn toàn không tương tác.
-// Dùng SSH_1_PUBLIC_KEY/SSH_1_PRIVATE_KEY (hoặc *_B64=1) từ CI secret khi có;
-// nếu thiếu sẽ sinh key local để smoke test. Metadata public được orchestrator
-// đọc từ ci-runtime/nodesync/host-ssh.json và publish lên RTDB.
+// Configure host sshd and publish pinned connection metadata without prompts.
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import { hostname, networkInterfaces, userInfo } from "node:os";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { hostname, networkInterfaces } from "node:os";
 import { resolve } from "node:path";
 import { parseEnv } from "../lib/env-utils.mjs";
-
-const ROOT = resolve(import.meta.dirname, "../..");
-const ENV = resolve(ROOT, ".env");
-const env = { ...(existsSync(ENV) ? parseEnv(ENV) : {}), ...process.env };
-const enabled = /^(1|true|yes|on)$/i.test(env.SSH_ENABLE || "0");
-const dry = process.argv.includes("--dry-run");
-const runtime = resolve(ROOT, "ci-runtime/nodesync");
-const keyFile = resolve(runtime, "id_ed25519");
-const pubFile = `${keyFile}.pub`;
-const authorized = resolve(runtime, "authorized_keys");
-const identityFile = resolve(runtime, "node-id");
-const manifestFile = resolve(runtime, "host-ssh.json");
-const sshUser = userInfo().username;
-const nodeId = env.ORCH_NODE_ID || "local-unknown";
-const decode = (v, b64) => b64 === "1" ? Buffer.from(v || "", "base64").toString("utf8") : (v || "");
-const privateKey = decode(env.SSH_1_PRIVATE_KEY, env.SSH_1_PRIVATE_KEY_B64);
-const publicKey = decode(env.SSH_1_PUBLIC_KEY, env.SSH_1_PUBLIC_KEY_B64);
-const run = (cmd, args, options={}) => {
-  console.log(`[nodesync-ssh] ${cmd} ${args.join(" ")}`);
-  if (dry) return "";
-  return execFileSync(cmd, args, { encoding: "utf8", input: options.input, stdio: options.capture ? ["pipe","pipe","pipe"] : "inherit" }).trim();
-};
-const sudo = (args, options={}) => process.getuid?.() === 0 ? run(args[0], args.slice(1), options) : run("sudo", ["-n", ...args], options);
-
-if (!enabled) { console.log("[nodesync-ssh] SSH_ENABLE!=1; bỏ qua bootstrap."); process.exit(0); }
-if (dry) {
-  console.log(`[nodesync-ssh] DRY RUN node=${nodeId} user=${sshUser}`);
-  console.log("[nodesync-ssh] sẽ cài/check openssh-server+rsync, tạo/cài key, restart sshd, scan host key và ghi manifest");
-  process.exit(0);
-}
-mkdirSync(runtime, { recursive: true });
-if (privateKey) {
-  writeFileSync(keyFile, privateKey.trim()+"\n", { mode: 0o600 });
-  if (publicKey) writeFileSync(pubFile, publicKey.trim()+"\n", { mode: 0o644 });
-  else writeFileSync(pubFile, run("ssh-keygen", ["-y", "-f", keyFile], {capture:true})+"\n", {mode:0o644});
-} else if (!existsSync(keyFile)) {
-  run("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-C", `${nodeId}@nodesync`, "-f", keyFile]);
-  console.warn("[nodesync-ssh] Không có SSH_1_PRIVATE_KEY; đã sinh key local. Multi-runner cần key chung trong CI secret.");
-}
-chmodSync(keyFile, 0o600);
-const pub = publicKey || readFileSync(pubFile, "utf8").trim();
-writeFileSync(authorized, pub+"\n", { mode: 0o600 });
-writeFileSync(identityFile, nodeId+"\n", { mode: 0o644 });
-
-if (process.platform === "linux") {
-  const apt = spawnSync("sh", ["-lc", "command -v sshd >/dev/null || (sudo -n apt-get update -qq && sudo -n apt-get install -y -qq openssh-server rsync)"]);
-  if (!dry && apt.status !== 0) throw new Error("Không thể cài openssh-server/rsync không tương tác");
-  sudo(["mkdir", "-p", "/run/sshd", "/etc/ssh/sshd_config.d"]);
-  const dropin = [
-    "PasswordAuthentication no", "KbdInteractiveAuthentication no", "PubkeyAuthentication yes",
-    `AuthorizedKeysFile ${authorized}`, "PermitRootLogin no", "StrictModes no",
-    "AllowTcpForwarding no", "X11Forwarding no", "PermitTTY no",
-  ].join("\n")+"\n";
-  const tmp = resolve(runtime, "99-nodesync.conf"); writeFileSync(tmp, dropin);
-  sudo(["cp", tmp, "/etc/ssh/sshd_config.d/99-nodesync.conf"]);
-  sudo(["ssh-keygen", "-A"]);
-  if (spawnSync("sh", ["-lc", "command -v systemctl >/dev/null"]).status === 0) sudo(["systemctl", "restart", "ssh"]);
-  else sudo(["sh", "-lc", "pkill -HUP sshd || /usr/sbin/sshd"]);
-}
-const hostKey = run("ssh-keyscan", ["-T", "5", "-t", "ed25519", "127.0.0.1"], { capture:true }).split("\n").find(x=>x&&!x.startsWith("#")) || "";
-if (!hostKey) throw new Error("Không lấy được SSH host key sau bootstrap");
-const fingerprint = run("ssh-keygen", ["-lf", "/dev/stdin"], { capture:true, input:hostKey });
-const ips = Object.values(networkInterfaces()).flat().filter(x=>x&&!x.internal).map(x=>x.address);
-const manifest = { version:1, nodeId, user:sshUser, port:22, tailscalePort:2222, host:hostname(), ips, workspace:ROOT, publicKey:pub, hostKey, fingerprint, identityFile, generatedAt:new Date().toISOString() };
-writeFileSync(manifestFile, JSON.stringify(manifest,null,2)+"\n", {mode:0o600});
-console.log(`[nodesync-ssh] READY user=${sshUser} node=${nodeId} fingerprint=${fingerprint}`);
+const ROOT=resolve(import.meta.dirname,"../.."),ENV=resolve(ROOT,".env"),env={...(existsSync(ENV)?parseEnv(ENV):{}),...process.env};
+const enabled=/^(1|true|yes|on)$/i.test(env.SSH_ENABLE||"0"),dry=process.argv.includes("--dry-run"),runtime=resolve(ROOT,"ci-runtime/nodesync");
+const keyFile=resolve(runtime,"id_ed25519"),identityFile=resolve(runtime,"node-id"),manifestFile=resolve(runtime,"host-ssh.json"),nodeId=env.ORCH_NODE_ID||"local-unknown";
+const users=Object.keys(env).map(k=>k.match(/^SSH_(\d+)_USER$/)).filter(Boolean).sort((a,b)=>+a[1]-+b[1]).map(m=>env[m[0]]).filter(Boolean),sshUser=users[0];
+const safe=(x)=>String(x).replace(/(password|pass|secret|token|private[_-]?key)=\S+/gi,"$1=<hidden>");
+function run(cmd,args,opt={}){console.log(`[nodesync-ssh] ${safe(cmd+" "+args.join(" "))}`);if(dry)return"";return execFileSync(cmd,args,{encoding:"utf8",input:opt.input,stdio:opt.capture?["pipe","pipe","pipe"]:"inherit"}).trim()}
+const sudo=(cmd,args,opt)=>process.getuid?.()===0?run(cmd,args,opt):run("sudo",["-n",cmd,...args],opt);
+if(!enabled){console.log("[nodesync-ssh] disabled");process.exit(0)}if(!sshUser)throw new Error("Run nodesync ssh:env before bootstrap");
+if(dry){console.log(`[nodesync-ssh] DRY RUN node=${nodeId} user=${sshUser}`);process.exit(0)}
+mkdirSync(runtime,{recursive:true});if(!existsSync(keyFile))throw new Error(`missing ${keyFile}; run ssh:env`);chmodSync(keyFile,0o600);writeFileSync(identityFile,nodeId+"\n",{mode:0o644});
+if(process.platform!=="linux")throw new Error("sshd bootstrap requires Linux");
+const install=spawnSync("sh",["-lc","command -v sshd >/dev/null && command -v rsync >/dev/null && command -v sshpass >/dev/null || (sudo -n apt-get update -qq && sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openssh-server rsync sshpass)"]);if(install.status!==0)throw new Error("non-interactive SSH dependencies install failed");
+sudo("mkdir",["-p","/run/sshd","/etc/ssh/sshd_config.d","/etc/nodesync"]);sudo("install",["-m","0644",identityFile,"/etc/nodesync/node-id"]);
+const dropin=["PasswordAuthentication yes","KbdInteractiveAuthentication no","PubkeyAuthentication yes","PermitRootLogin no","UsePAM yes","AllowTcpForwarding no","X11Forwarding no","PermitTTY yes",`AllowUsers ${users.join(" ")}`].join("\n")+"\n";
+const tmp=resolve(runtime,"99-nodesync.conf");writeFileSync(tmp,dropin);sudo("install",["-m","0644",tmp,"/etc/ssh/sshd_config.d/99-nodesync.conf"]);sudo("ssh-keygen",["-A"]);sudo("sshd",["-t"]);
+if(spawnSync("sh",["-lc","command -v systemctl >/dev/null && systemctl list-unit-files ssh.service >/dev/null 2>&1"]).status===0)sudo("systemctl",["restart","ssh"]);else sudo("sh",["-lc","pkill -HUP sshd || /usr/sbin/sshd"]);
+const hostKey=run("ssh-keyscan",["-T","5","-t","ed25519","127.0.0.1"],{capture:true}).split("\n").find(x=>x&&!x.startsWith("#"));if(!hostKey)throw new Error("SSH host key unavailable");
+const fingerprint=run("ssh-keygen",["-lf","/dev/stdin"],{capture:true,input:hostKey}),ips=Object.values(networkInterfaces()).flat().filter(x=>x&&!x.internal).map(x=>x.address);
+const manifest={version:2,nodeId,user:sshUser,users,port:22,tailscalePort:2222,host:hostname(),ips,workspace:ROOT,hostKey,fingerprint,identityFile:"/etc/nodesync/node-id",generatedAt:new Date().toISOString()};writeFileSync(manifestFile,JSON.stringify(manifest,null,2)+"\n",{mode:0o600});
+console.log(`[nodesync-ssh] READY users=${users.join(",")} node=${nodeId} fingerprint=${fingerprint}`);

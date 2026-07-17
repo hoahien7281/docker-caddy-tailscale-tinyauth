@@ -20,7 +20,7 @@ async function main(){
   const nodes=(await db.ref(paths.nodes).get()).val()||{};
   const source=selectPredecessor(nodes,self,Date.now(),heartbeatTtlMs());
   const output={version:1,selfId:self,source,discoveredAt:new Date().toISOString()};
-  const out=process.env.NODESYNC_PREDECESSOR_FILE||"/workspace/ci-runtime/nodesync/predecessor.json";
+  const out=process.env.SSH_PREDECESSOR_FILE||"/workspace/ci-runtime/nodesync/predecessor.json";
   writeFileSync(out,JSON.stringify(output,null,2)+"\n");
   console.log(source?`[nodesync-discovery] source=${source.nodeId} startedAt=${source.startedAt}`:"[nodesync-discovery] no predecessor; first runner skips sync");
 }

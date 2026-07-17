@@ -16,7 +16,9 @@ services:
         required: false
     environment:
       SSH_WORKSPACE: /workspace
-      NODESYNC_SSH_KEY_FILE: /runtime/id_ed25519
+      SSH_RUNTIME_DIR: /runtime
+      SSH_KEY_FILE: /runtime/id_ed25519
+      SSH_PREDECESSOR_FILE: /runtime/predecessor.json
     volumes:
       - ..:/workspace:rw
       - /var/run/docker.sock:/var/run/docker.sock

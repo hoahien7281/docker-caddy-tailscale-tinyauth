@@ -1,82 +1,21 @@
-// nodesync/scripts/lib/env.mjs
-// Đọc cấu hình nodesync từ ENV + config.jsonc.
-//
-// QUY TẮC (kiến trúc dynamic hiện hành — xem report 06/07):
-//   - Sidecar là client/controller: KHÔNG tạo user, KHÔNG chạy sshd. SSH server
-//     được bootstrap trên CI runner (scripts/runners/setup-nodesync-ssh.mjs),
-//     dùng 1 keypair Ed25519 chung, key-only (không password/không root).
-//     Keypair: SSH_1_PRIVATE_KEY / SSH_1_PUBLIC_KEY (có thể *_B64=1).
-//   - Kênh: SSH_CHANNEL_TAILSCALE_ENABLE / _CLOUDFLARE_ENABLE / _HYBRID_ENABLE.
-//   - KHÔNG parse .env bằng regex thô — env đã có sẵn trong process.env (Compose
-//     inject qua env_file).
-
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseJsonc } from "jsonc-parser";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-// Giải mã base64 nếu cờ *_B64 bật; ngược lại trả nguyên văn.
-function maybeB64(value, isB64) {
-  if (value == null) return value;
-  if (!isB64) return value;
-  try {
-    return Buffer.from(String(value).trim(), "base64").toString("utf8");
-  } catch {
-    return value;
-  }
+const here=dirname(fileURLToPath(import.meta.url));
+export function maybeB64(value,isB64){if(value==null)return value;return isB64?Buffer.from(String(value).trim(),"base64").toString("utf8"):value}
+export function truthy(v,def="0"){return /^(1|true|yes|on)$/i.test(String(v??def))}
+export function loadConfig(){
+ const file=resolve(here,"../../config.jsonc"), defaults={channel_priority:["tailscale","cloudflare","hybrid"],sync_paths:[],rsync_options:["-az","--delete","--checksum","--safe-links","--stats","--human-readable"],ssh_connect_timeout_seconds:10,sync_timeout_seconds:600,diff_timeout_seconds:120};
+ let cfg=defaults;try{if(existsSync(file))cfg={...defaults,...parseJsonc(readFileSync(file,"utf8"))}}catch{}
+ const paths=process.env.SSH_SYNC_PATHS??process.env.SSH_SYNC_PATHS;
+ if(paths!==undefined)cfg.sync_paths=String(paths).split(",").map(s=>s.trim()).filter(Boolean);
+ return cfg;
 }
-
-function truthy(v, def = "0") {
-  const s = String(v ?? def).toLowerCase();
-  return s === "1" || s === "true" || s === "yes" || s === "on";
+export function workspaceDir(){return process.env.SSH_WORKSPACE||process.env.ORCH_REPO_DIR||"/workspace"}
+export function enabledChannels(config=loadConfig(),env=process.env){const f={tailscale:truthy(env.SSH_CHANNEL_TAILSCALE_ENABLE,"1"),cloudflare:truthy(env.SSH_CHANNEL_CLOUDFLARE_ENABLE),hybrid:truthy(env.SSH_CHANNEL_HYBRID_ENABLE)};return(config.channel_priority||Object.keys(f)).filter(c=>f[c])}
+export function nodesyncEnabled(env=process.env){return truthy(env.SSH_ENABLE)}
+export function collectSshUsers(env=process.env){
+ const ids=new Set();for(const k of Object.keys(env)){const m=k.match(/^SSH_(\d+)_(?:USER|PASS|PASSWORD|PUBLIC_KEY|PRIVATE_KEY)/i);if(m)ids.add(Number(m[1]))}
+ return [...ids].sort((a,b)=>a-b).map(index=>{const p=`SSH_${index}_`;return{index,user:env[`${p}USER`],password:env[`${p}PASS`]||env[`${p}PASSWORD`],publicKey:maybeB64(env[`${p}PUBLIC_KEY`],truthy(env[`${p}PUBLIC_KEY_B64`])),privateKey:maybeB64(env[`${p}PRIVATE_KEY`],truthy(env[`${p}PRIVATE_KEY_B64`])),uid:env[`${p}UID`],shell:env[`${p}SHELL`]||"/bin/bash",privileged:truthy(env[`${p}PRIVILEGED`],"1")}}).filter(x=>x.user);
 }
-
-// Nạp config.jsonc (mặc định), cho phép override vài field bằng env.
-export function loadConfig() {
-  const file = resolve(__dirname, "..", "..", "config.jsonc");
-  const defaults = {
-    channel_priority: ["tailscale", "cloudflare", "hybrid"],
-    sync_paths: [],
-    rsync_options: ["-az", "--delete", "--checksum", "--safe-links", "--stats", "--human-readable"],
-    ssh_connect_timeout_seconds: 10,
-    sync_timeout_seconds: 600,
-    diff_timeout_seconds: 120,
-  };
-  let cfg = defaults;
-  if (existsSync(file)) {
-    try {
-      cfg = { ...defaults, ...parseJsonc(readFileSync(file, "utf8")) };
-    } catch {
-      cfg = defaults;
-    }
-  }
-  // Override bằng env (nếu có).
-  if (Object.hasOwn(process.env, "NODESYNC_SYNC_PATHS")) {
-    cfg.sync_paths = process.env.NODESYNC_SYNC_PATHS.split(",").map((s) => s.trim()).filter(Boolean);
-  }
-  return cfg;
-}
-
-// Thư mục workspace mount (chứa dữ liệu cần sync + file cờ hold).
-export function workspaceDir() {
-  return process.env.SSH_WORKSPACE || process.env.ORCH_REPO_DIR || "/workspace";
-}
-
-// Kênh nào được bật + thứ tự ưu tiên fallback.
-export function enabledChannels(config = loadConfig(), env = process.env) {
-  const flags = {
-    tailscale: truthy(env.SSH_CHANNEL_TAILSCALE_ENABLE, "1"), // mặc định bật tailscale
-    cloudflare: truthy(env.SSH_CHANNEL_CLOUDFLARE_ENABLE, "0"),
-    hybrid: truthy(env.SSH_CHANNEL_HYBRID_ENABLE, "0"),
-  };
-  return (config.channel_priority || ["tailscale", "cloudflare", "hybrid"]).filter((c) => flags[c]);
-}
-
-// nodesync có được bật không (SSH_ENABLE=1).
-export function nodesyncEnabled(env = process.env) {
-  return truthy(env.SSH_ENABLE, "0");
-}
-
-export { truthy, maybeB64 };

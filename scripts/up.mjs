@@ -71,7 +71,7 @@ function getNodesyncConfig() {
   const env = { ...parseEnv(ENV), ...process.env };
   return {
     enabled: truthy(env.SSH_ENABLE),
-    syncOnStart: String(env.NODESYNC_SYNC_PATHS || "").split(",").some(Boolean),
+    syncOnStart: String(env.SSH_SYNC_PATHS || env.SSH_SYNC_PATHS || "").split(",").some(Boolean),
     tailscale: truthy(env.SSH_CHANNEL_TAILSCALE_ENABLE ?? "1"),
     orchestratorEnabled: truthy(env.CONSUL_ENABLE),
   };
@@ -180,7 +180,7 @@ if (nodesync.enabled && nodesync.syncOnStart) {
   // Discovery bắt buộc orchestrator (RTDB) để chọn predecessor. Không có nó thì
   // sync.mjs sẽ throw "thiếu discovery manifest" → fail rõ ràng ngay từ đây.
   if (!nodesync.orchestratorEnabled) {
-    throw new Error("NODESYNC_SYNC_PATHS có dữ liệu nhưng CONSUL_ENABLE!=1; RTDB discovery là bắt buộc cho nodesync sync.");
+    throw new Error("SSH_SYNC_PATHS có dữ liệu nhưng CONSUL_ENABLE!=1; RTDB discovery là bắt buộc cho nodesync sync.");
   }
   // 1) Bootstrap SSH server trên host runner (tạo/cài key, sshd, host key...).
   run(`node scripts/runners/setup-nodesync-ssh.mjs${DRY_RUN ? " --dry-run" : ""}`);

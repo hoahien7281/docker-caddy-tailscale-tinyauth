@@ -1,61 +1,42 @@
 #!/usr/bin/env node
-// Sync configured paths từ predecessor do orchestrator discovery ghi ra.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve, posix } from "node:path";
-import { spawnSync } from "node:child_process";
-import { loadConfig, enabledChannels, workspaceDir } from "./lib/env.mjs";
+// Predecessor sync with pinned host key; smoke mode verifies all channels independently.
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { dirname, relative, resolve, posix } from "node:path";
+import { spawn } from "node:child_process";
+import { loadConfig, enabledChannels, workspaceDir, truthy } from "./lib/env.mjs";
 import { log, warn, error } from "./lib/log.mjs";
+const cfg=loadConfig(),ws=workspaceDir(),runtime=process.env.SSH_RUNTIME_DIR||"/runtime";
+const predecessorFile=process.env.SSH_PREDECESSOR_FILE||`${runtime}/predecessor.json`,keyFile=process.env.SSH_KEY_FILE||`${runtime}/id_ed25519`,reports=resolve(ws,"ci-runtime/nodesync/reports"),smoke=truthy(process.env.SSH_SYNC_SMOKE_ENABLE);
+const authUser=process.env.SSH_1_USER||"",authPass=process.env.SSH_1_PASS||process.env.SSH_1_PASSWORD||"";
+const quote=(s)=>`'${String(s).replaceAll("'",`'\\''`)}'`,safePath=(p)=>{if(!p||p.startsWith("/")||p.split(/[\\/]+/).includes("..")||p==="."||p==="ci-runtime")throw new Error(`unsafe sync path: ${p}`);return p};
+function exec(cmd,args,{timeout=30000,env={}}={}){return new Promise(resolveDone=>{const started=Date.now(),p=spawn(cmd,args,{stdio:["ignore","pipe","pipe"],env:{...process.env,...env}});let out="",err="",done=false;const finish=(result)=>{if(done)return;done=true;clearTimeout(timer);resolveDone({...result,out:out.trim(),err:err.trim(),durationMs:Date.now()-started})};p.stdout.on("data",d=>out+=d);p.stderr.on("data",d=>err+=d);p.on("error",e=>finish({ok:false,status:null,err:e.message}));p.on("close",code=>finish({ok:code===0,status:code}));const timer=setTimeout(()=>{p.kill("SIGKILL");finish({ok:false,status:null,err:`timeout ${timeout}ms`})},timeout)})}
+function endpoints(source){const map={tailscale:[],cloudflare:[],hybrid:[]};if(source.tailscale?.available&&source.tailscale?.online){const host=source.tailscale.ip||source.tailscale.ips?.[0];if(host)map.tailscale.push({host,port:source.ssh.tailscalePort||2222,proxy:"nc -x tailscale:1055 %h %p"})}if(source.domain)for(let attempt=1;attempt<=3;attempt++)map.cloudflare.push({host:`ssh.${source.domain}`,port:22,attempt,proxy:"docker exec -i cloudflared cloudflared access ssh --hostname %h"});for(const host of source.ssh.ips||[])map.hybrid.push({host,port:source.ssh.port||22});return map}
+function knownHost(c,source,channel){const parts=String(source.ssh.hostKey||"").trim().split(/\s+/);if(parts.length<3)throw new Error("invalid source SSH host key");const file=resolve(runtime,`known_hosts.${channel}`);writeFileSync(file,`${c.port===22?c.host:`[${c.host}]:${c.port}`} ${parts.slice(1).join(" ")}\n`,{mode:0o600});return file}
+function sshArgs(c,source,channel,auth="key"){return["-o",`BatchMode=${auth==="key"?"yes":"no"}`,"-o",`PasswordAuthentication=${auth==="password"?"yes":"no"}`,"-o","KbdInteractiveAuthentication=no","-o","StrictHostKeyChecking=yes","-o",`UserKnownHostsFile=${knownHost(c,source,channel)}`,"-o",`IdentitiesOnly=${auth==="key"?"yes":"no"}`,"-o",`ConnectTimeout=${cfg.ssh_connect_timeout_seconds||10}`,...(auth==="key"?["-i",keyFile]:[]),"-p",String(c.port),...(c.proxy?["-o",`ProxyCommand=${c.proxy}`]:[])]}
+function authModes(){const out=[];if(existsSync(keyFile))out.push({name:"key",cmd:"ssh",prefix:[],env:{}});if(authPass)out.push({name:"password",cmd:"sshpass",prefix:["-e"],env:{SSHPASS:authPass}});return out}
+function inventory(root,{exclude=[]}={}){const files=[],dirs=[];if(!existsSync(root))return{files,dirs,checksum:null};const ignored=new Set(exclude);const walk=p=>{for(const e of readdirSync(p,{withFileTypes:true})){const full=resolve(p,e.name),rel=relative(root,full);if(ignored.has(rel))continue;if(e.isDirectory()){dirs.push(rel);walk(full)}else if(e.isFile()){const data=readFileSync(full);files.push({path:rel,size:statSync(full).size,sha256:createHash("sha256").update(data).digest("hex")})}}};walk(root);files.sort((a,b)=>a.path.localeCompare(b.path));dirs.sort();return{files,dirs,checksum:createHash("sha256").update(JSON.stringify({files,dirs})).digest("hex")}}
+function verifySmoke(root){const file=resolve(root,"manifest.json");if(!existsSync(file))throw new Error("smoke manifest missing after rsync");const manifest=JSON.parse(readFileSync(file,"utf8")),actual=inventory(root,{exclude:["manifest.json"]});const verified=actual.checksum===manifest.checksum;if(!verified)throw new Error(`smoke checksum mismatch expected=${manifest.checksum} actual=${actual.checksum}`);return{expectedChecksum:manifest.checksum,checksumVerified:true,sourceCreatedAt:manifest.createdAt}}
 
-const cfg=loadConfig(), ws=workspaceDir();
-const runtime=process.env.NODESYNC_RUNTIME_DIR||"/runtime";
-const predecessorFile=process.env.NODESYNC_PREDECESSOR_FILE||`${runtime}/predecessor.json`;
-const keyFile=process.env.NODESYNC_SSH_KEY_FILE||`${runtime}/id_ed25519`;
-const knownHosts=`${runtime}/known_hosts`;
-const sh=(cmd,args,{timeout=30000}={})=>{const r=spawnSync(cmd,args,{encoding:"utf8",timeout,maxBuffer:32*1024*1024});return{ok:r.status===0,out:(r.stdout||"").trim(),err:(r.stderr||r.error?.message||"").trim(),status:r.status}};
-const safePath=(p)=>{if(!p||p.startsWith("/")||p.split(/[\\/]+/).includes("..")||p==="."||p==="ci-runtime")throw new Error(`sync path không an toàn: ${p}`);return p};
-const quote=(s)=>`'${String(s).replaceAll("'",`'\\''`)}'`;
-
-function candidates(source){
- const channels=enabledChannels(cfg), out=[];
- for(const channel of channels){
-  if(channel==="tailscale" && source.tailscale?.available && source.tailscale?.online){
-   const host=source.tailscale.ip||source.tailscale.ips?.[0]; if(host) out.push({channel,host,port:source.ssh.tailscalePort||2222,proxy:`nc -x tailscale:1055 %h %p`});
+async function syncChannel(channel,source,selfId){
+ const startedAt=new Date().toISOString(),begin=Date.now(),report={version:1,channel,source:source.nodeId,current:selfId,startedAt,status:"failed",attempts:[]};
+ try{
+  const list=endpoints(source)[channel]||[],modes=authModes();if(!list.length)throw new Error("no endpoint metadata");if(!modes.length)throw new Error("no SSH key or password available");
+  outer:for(const c of list)for(const auth of modes){
+   const args=sshArgs(c,source,channel,auth.name),target=`${authUser||source.ssh.user}@${c.host}`,probe=await exec(auth.cmd,[...auth.prefix,...args,target,`cat ${quote(source.ssh.identityFile)}`],{timeout:30000,env:auth.env});
+   report.attempts.push({endpoint:`${c.host}:${c.port}`,attempt:c.attempt||1,auth:auth.name,verified:probe.ok&&probe.out.trim()===source.nodeId,durationMs:probe.durationMs,error:probe.ok?undefined:probe.err});
+   if(!probe.ok||probe.out.trim()!==source.nodeId)continue;
+   report.endpoint=`${c.host}:${c.port}`;report.auth=auth.name;report.paths=[];
+   for(const raw of cfg.sync_paths){
+    const rel=safePath(raw),local=smoke?resolve(ws,"ci-runtime/smoke-sync-results",channel):resolve(ws,rel),remote=String(source.ssh.workspace||ws).replace(/\/$/,"");mkdirSync(local,{recursive:true});
+    const remoteShell=[...(auth.name==="password"?["sshpass","-e"]:[]),"ssh",...args].map(quote).join(" ");
+    const r=await exec("rsync",[...cfg.rsync_options,"-e",remoteShell,`${target}:${remote}/${posix.normalize(rel)}/`,`${local}/`],{timeout:(cfg.sync_timeout_seconds||600)*1000,env:auth.env});
+    if(!r.ok)throw new Error(`rsync ${rel}: ${r.err}`);const inv=inventory(local),verification=smoke?verifySmoke(local):{};report.paths.push({path:rel,destination:relative(ws,local),durationMs:r.durationMs,...inv,...verification});log(`channel=${channel} auth=${auth.name} path=${rel} files=${inv.files.length} dirs=${inv.dirs.length} checksum=${inv.checksum} verified=${verification.checksumVerified??"n/a"} durationMs=${r.durationMs}`);
+   }
+   report.status="passed";break outer;
   }
-  if(channel==="cloudflare" && source.domain) for(let retry=1;retry<=3;retry++) out.push({channel,attempt:retry,host:`ssh.${source.domain}`,port:22,proxy:`docker exec -i -e TUNNEL_SERVICE_TOKEN_ID -e TUNNEL_SERVICE_TOKEN_SECRET cloudflared cloudflared access ssh --hostname %h`});
-  if(channel==="hybrid") for(const host of source.ssh.ips||[]) out.push({channel,host,port:source.ssh.port||22});
- }
- return out;
+  if(report.status!=="passed")throw new Error("all endpoints/auth modes rejected");
+ }catch(e){report.error=e.message;warn(`channel=${channel} failed: ${e.message}`)}finally{report.finishedAt=new Date().toISOString();report.durationMs=Date.now()-begin;mkdirSync(reports,{recursive:true});writeFileSync(resolve(reports,`${channel}.json`),JSON.stringify(report,null,2)+"\n");log(`channel-report channel=${channel} status=${report.status} started=${startedAt} finished=${report.finishedAt} durationMs=${report.durationMs}`)}return report;
 }
-function knownHostLine(host,port,hostKey){
- const parts=String(hostKey).trim().split(/\s+/); if(parts.length<3) throw new Error("source hostKey không hợp lệ");
- return `${port===22?host:`[${host}]:${port}`} ${parts.slice(1).join(" ")}\n`;
-}
-function sshArgs(c){return ["-o","BatchMode=yes","-o","PasswordAuthentication=no","-o","StrictHostKeyChecking=yes","-o",`UserKnownHostsFile=${knownHosts}`,"-o","IdentitiesOnly=yes","-o","ConnectTimeout=10","-i",keyFile,"-p",String(c.port),...(c.proxy?["-o",`ProxyCommand=${c.proxy}`]:[])];}
-function connect(source){
- if(!existsSync(keyFile)) throw new Error(`thiếu private key ${keyFile}`);
- for(const c of candidates(source)){
-  writeFileSync(knownHosts,knownHostLine(c.host,c.port,source.ssh.hostKey),{mode:0o600});
-  const target=`${source.ssh.user}@${c.host}`;
-  const identity=sh("ssh",[...sshArgs(c),target,`cat ${quote(source.ssh.identityFile)}`],{timeout:30000});
-  if(identity.ok && identity.out.trim()===source.nodeId){log(`SSH verified channel=${c.channel} attempt=${c.attempt||1} source=${source.nodeId} endpoint=${c.host}:${c.port}`);return{...c,target,args:sshArgs(c)}}
-  warn(`Channel ${c.channel} attempt=${c.attempt||1} rejected: ${identity.err||`identity=${identity.out||"missing"}`}`);
- }
- throw new Error(`Không channel nào xác minh đúng predecessor ${source.nodeId}`);
-}
-function main(){
- log("=== NODESYNC dynamic predecessor sync ===");
- if(!cfg.sync_paths.length){log("Không có file/folder cấu hình để sync; không kết nối SSH.");return;}
- if(!existsSync(predecessorFile))throw new Error(`thiếu discovery manifest ${predecessorFile}`);
- const {source,selfId}=JSON.parse(readFileSync(predecessorFile,"utf8"));
- if(!source){log(`Runner ${selfId} không có predecessor (runner lên đầu tiên); bỏ qua sync.`);return;}
- const conn=connect(source), remoteRoot=String(source.ssh.workspace||ws).replace(/\/$/,"");
- for(const raw of cfg.sync_paths){
-  const rel=safePath(raw), local=resolve(ws,rel); mkdirSync(local,{recursive:true});
-  const sshCmd=["ssh",...conn.args].map(quote).join(" ");
-  log(`Sync path=${rel} source=${source.nodeId} → current=${selfId}`);
-  const r=sh("rsync",[...cfg.rsync_options,"-e",sshCmd,`${conn.target}:${remoteRoot}/${posix.normalize(rel)}/`,`${local}/`],{timeout:(cfg.sync_timeout_seconds||600)*1000});
-  if(!r.ok)throw new Error(`rsync ${rel} lỗi: ${r.err}`); log(r.out);
- }
- log(`NODESYNC PASS source=${source.nodeId} current=${selfId} paths=${cfg.sync_paths.length}`);
-}
-try{main()}catch(e){error(e.stack||e.message);process.exit(1)}
+async function main(){log("=== SSH predecessor sync ===");if(!cfg.sync_paths.length){log("SSH_SYNC_PATHS empty; skip");return}if(!existsSync(predecessorFile))throw new Error(`missing discovery manifest ${predecessorFile}`);if(!existsSync(keyFile)&&!authPass)throw new Error("missing SSH key and password");const{source,selfId}=JSON.parse(readFileSync(predecessorFile,"utf8"));if(!source){log(`runner=${selfId} first runner; smoke source data retained for successor`);return}const channels=enabledChannels(cfg);let results;if(smoke)results=await Promise.all(channels.map(c=>syncChannel(c,source,selfId)));else{results=[];for(const c of channels){const r=await syncChannel(c,source,selfId);results.push(r);if(r.status==="passed")break}}const summary={smoke,source:source.nodeId,current:selfId,generatedAt:new Date().toISOString(),results:results.map(({channel,status,durationMs,error})=>({channel,status,durationMs,error}))};writeFileSync(resolve(reports,"summary.json"),JSON.stringify(summary,null,2)+"\n");if(!results.some(r=>r.status==="passed"))throw new Error("no SSH channel passed");log(`SSH SYNC PASS ${results.map(r=>`${r.channel}:${r.status}`).join(" ")}`)}
+main().catch(e=>{error(e.stack||e.message);process.exit(1)});

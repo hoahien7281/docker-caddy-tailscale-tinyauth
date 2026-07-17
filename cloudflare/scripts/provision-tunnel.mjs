@@ -273,7 +273,17 @@ async function main() {
     willWrite.push({ key: "CF_TUNNEL_TOKEN", value: "<token>", reason: "auto-fetched" });
   }
 
-  // 7. Hostnames
+  // 7. Cloudflare Access service token for non-interactive SSH.
+  const sshServiceTokenName = env.CF_SSH_TUNNEL_SERVICE_TOKEN_NAME || `${domain}-nodesync-ssh`;
+  const needsSshServiceToken = !env.CF_SSH_TUNNEL_SERVICE_TOKEN_ID || !env.CF_SSH_TUNNEL_SERVICE_TOKEN_SECRET;
+  if (needsSshServiceToken) {
+    willResolve.push({ key: "CF_SSH_TUNNEL_SERVICE_TOKEN_ID/SECRET", reason: `POST /accounts/{id}/access/service_tokens (name: ${sshServiceTokenName})` });
+    willWrite.push({ key: "CF_SSH_TUNNEL_SERVICE_TOKEN_NAME", value: sshServiceTokenName, reason: "stable Access service-token name" });
+    willWrite.push({ key: "CF_SSH_TUNNEL_SERVICE_TOKEN_ID", value: "<client_id>", reason: "auto-created" });
+    willWrite.push({ key: "CF_SSH_TUNNEL_SERVICE_TOKEN_SECRET", value: "<masked>", reason: "returned only when created" });
+  }
+
+  // 8. Hostnames
   const { ingress, fqdns, catchAll } = loadIngress(domain);
 
   // ── Confirmation summary ───────────────────────────────────────
@@ -285,8 +295,9 @@ async function main() {
   console.log(`Zone ID:         ${zoneId} (${zoneAction})`);
   console.log(`Tunnel name:     ${tunnelName}`);
   console.log(`Tunnel ID:       ${tunnelId} (${tunnelAction})`);
-  console.log(`Tunnel token:    ${tunnelToken === "(new)" ? "(new)" : tunnelToken.slice(0, 20) + "..."} (${tokenAction})`);
+  console.log(`Tunnel token:    ${tunnelToken === "(new)" ? "(new)" : "<configured>"} (${tokenAction})`);
   console.log(`Tunnel target:   ${env.CF_TUNNEL_TARGET || `${tunnelId}.cfargotunnel.com`}`);
+  console.log(`SSH service auth:${needsSshServiceToken ? ` create ${sshServiceTokenName}` : " configured"}`);
   console.log(`Ingress:         ${ingress.length} rules`);
   for (const rule of ingress) console.log(`  ${rule.hostname} -> ${rule.service}`);
   console.log(`Catch-all:       ${catchAll}`);
@@ -301,6 +312,8 @@ async function main() {
   if (env.CF_TUNNEL_ID) present.push("CF_TUNNEL_ID");
   if (env.CF_TUNNEL_TOKEN) present.push("CF_TUNNEL_TOKEN");
   if (env.CF_TUNNEL_TARGET) present.push("CF_TUNNEL_TARGET");
+  if (env.CF_SSH_TUNNEL_SERVICE_TOKEN_ID) present.push("CF_SSH_TUNNEL_SERVICE_TOKEN_ID");
+  if (env.CF_SSH_TUNNEL_SERVICE_TOKEN_SECRET) present.push("CF_SSH_TUNNEL_SERVICE_TOKEN_SECRET");
   if (env.CF_API_TOKEN) present.push("CF_API_TOKEN");
   else if (env.CF_API_EMAIL && getGlobalApiKey(env)) {
     present.push("CF_API_EMAIL");
@@ -341,6 +354,7 @@ async function main() {
       console.log(`  GET  /accounts/{account_id}/cfd_tunnel?name=${tunnelName}  (fallback lookup)`);
     }
     if (!env.CF_TUNNEL_TOKEN) console.log(`  GET  /accounts/{account_id}/cfd_tunnel/{tunnel_id}/token`);
+    if (needsSshServiceToken) console.log(`  POST /accounts/{account_id}/access/service_tokens  (SSH service auth)`);
     console.log(`  PUT  /accounts/{account_id}/cfd_tunnel/{tunnel_id}/configurations  (ingress)`);
     for (const h of fqdns) {
       console.log(`  GET  /zones/{zone_id}/dns_records?type=CNAME&name=${h}`);
@@ -450,6 +464,35 @@ async function main() {
       written.push({ key: "CF_TUNNEL_TOKEN", value: tunnelToken.slice(0, 20) + "..." });
     } else {
       showStep("CF_TUNNEL_TOKEN — fetch failed", res);
+      hasFailure = true;
+    }
+  }
+
+  // Cloudflare Access service token. The secret is returned only once, so write
+  // and mask it immediately; never include either value in logs.
+  if (needsSshServiceToken && accountId) {
+    console.log(`\n==> Creating SSH Access service token '${sshServiceTokenName}'...`);
+    const res = await cf("POST", `/accounts/${accountId}/access/service_tokens`, { name: sshServiceTokenName }, authHeaders);
+    const clientId = res.success ? res.result?.client_id || "" : "";
+    const clientSecret = res.success ? res.result?.client_secret || "" : "";
+    if (clientId && clientSecret) {
+      showStep("SSH Access service token created (credentials masked)", res);
+      if (process.env.GITHUB_ACTIONS === "true") {
+        console.log(`::add-mask::${clientId}`);
+        console.log(`::add-mask::${clientSecret}`);
+      }
+      if (process.env.TF_BUILD === "True") {
+        console.log(`##vso[task.setsecret]${clientId}`);
+        console.log(`##vso[task.setsecret]${clientSecret}`);
+      }
+      writeEnvVar(ENV_FILE, "CF_SSH_TUNNEL_SERVICE_TOKEN_NAME", sshServiceTokenName);
+      writeEnvVar(ENV_FILE, "CF_SSH_TUNNEL_SERVICE_TOKEN_ID", clientId);
+      writeEnvVar(ENV_FILE, "CF_SSH_TUNNEL_SERVICE_TOKEN_SECRET", clientSecret);
+      written.push({ key: "CF_SSH_TUNNEL_SERVICE_TOKEN_NAME", value: sshServiceTokenName });
+      written.push({ key: "CF_SSH_TUNNEL_SERVICE_TOKEN_ID", value: "<masked>" });
+      written.push({ key: "CF_SSH_TUNNEL_SERVICE_TOKEN_SECRET", value: "<masked>" });
+    } else {
+      showStep("SSH Access service token creation failed", res);
       hasFailure = true;
     }
   }

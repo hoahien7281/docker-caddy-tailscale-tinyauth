@@ -75,7 +75,7 @@ function nodesyncConfig(envFile) {
   const env = { ...parseEnv(envFile), ...process.env };
   return {
     enabled: envTruthy(env.SSH_ENABLE),
-    paths: String(env.NODESYNC_SYNC_PATHS || "").split(",").map((x) => x.trim()).filter(Boolean),
+    paths: String(env.SSH_SYNC_PATHS || env.SSH_SYNC_PATHS || "").split(",").map((x) => x.trim()).filter(Boolean),
     tailscaleChannel: envTruthy(env.SSH_CHANNEL_TAILSCALE_ENABLE ?? "1"),
     cloudflareChannel: envTruthy(env.SSH_CHANNEL_CLOUDFLARE_ENABLE),
     hybridChannel: envTruthy(env.SSH_CHANNEL_HYBRID_ENABLE),
@@ -171,7 +171,7 @@ await Promise.all([
 if (nodesync.enabled) {
   run(`node scripts/runners/setup-nodesync-ssh.mjs${DRY_RUN ? " --dry-run" : ""}`);
   if (nodesync.paths.length) {
-    if (!nodesync.orchestratorEnabled) throw new Error("NODESYNC_SYNC_PATHS có dữ liệu nhưng CONSUL_ENABLE!=1; RTDB discovery là bắt buộc");
+    if (!nodesync.orchestratorEnabled) throw new Error("SSH_SYNC_PATHS có dữ liệu nhưng CONSUL_ENABLE!=1; RTDB discovery là bắt buộc");
     // cloudflared được start khi Cloudflare channel bật để client ProxyCommand dùng
     // chính binary/container hiện hữu; caddy dependency có thể được Compose kéo theo.
     const services = ["orchestrator", "nodesync"];
@@ -196,7 +196,7 @@ if (nodesync.enabled) {
     run(composeArgs(`exec -T orchestrator node scripts/discover-predecessor.mjs`));
     run(composeArgs(`exec -T nodesync node scripts/sync.mjs${SILENT ? " --silent" : ""}`));
     log("Nodesync dynamic sync hoàn tất; tiếp tục startup độc lập của stack.");
-  } else log("NODESYNC_SYNC_PATHS rỗng: không discover/SSH/rsync.");
+  } else log("SSH_SYNC_PATHS rỗng: không discover/SSH/rsync.");
 }
 
 // Start stack

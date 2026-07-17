@@ -104,6 +104,18 @@ jobs:
           ENV_FILE: ${{ secrets.ENV_FILE }}
         run: node scripts/runners/setup-env.mjs
 
+      - name: Materialize SSH environment and mask secrets
+        run: npm run ssh:env --prefix nodesync
+
+      - name: Prepare SSH sync smoke data
+        run: npm run ssh:smoke:prepare --prefix nodesync
+
+      - name: Provision SSH users non-interactively
+        run: sudo -n --preserve-env=SSH_ENABLE,SSH_SYNC_SMOKE_ENABLE node nodesync/scripts/setup-users.mjs --env .env
+
+      - name: Configure SSH server non-interactively
+        run: node scripts/runners/setup-nodesync-ssh.mjs
+
       - name: Add Tinyauth CI bot
         run: node scripts/runners/setup-tinyauth-ci-user.mjs
 

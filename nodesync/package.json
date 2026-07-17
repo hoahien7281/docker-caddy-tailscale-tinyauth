@@ -9,6 +9,9 @@
   },
   "scripts": {
     "start": "node scripts/entrypoint.mjs",
+    "ssh:env": "node scripts/ssh-setup-env.mjs",
+    "ssh:users": "node scripts/setup-users.mjs",
+    "ssh:smoke:prepare": "node scripts/smoke-data.mjs",
     "sync": "node scripts/sync.mjs",
     "verify": "node scripts/verify-integrity.mjs"
   },

@@ -44,6 +44,10 @@ services:
       TUNNEL_LOGLEVEL: ${CF_TUNNEL_LOGLEVEL:-info}
       TUNNEL_TRANSPORT_PROTOCOL: ${CF_TUNNEL_TRANSPORT_PROTOCOL:-auto}
       TUNNEL_EDGE_IP_VERSION: ${CF_TUNNEL_EDGE_IP_VERSION:-4}
+      # cloudflared Access expects TUNNEL_SERVICE_TOKEN_* internally; callers
+      # configure only the normalized CF_SSH_* variables.
+      TUNNEL_SERVICE_TOKEN_ID: ${CF_SSH_TUNNEL_SERVICE_TOKEN_ID:-}
+      TUNNEL_SERVICE_TOKEN_SECRET: ${CF_SSH_TUNNEL_SERVICE_TOKEN_SECRET:-}
       NO_AUTOUPDATE: ${NO_AUTOUPDATE:-true}
     # Linux: cho ingress ssh://host.docker.internal:22 tới sshd tự bootstrap trên runner.
     extra_hosts:

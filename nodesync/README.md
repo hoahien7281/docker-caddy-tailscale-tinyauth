@@ -1,105 +1,91 @@
-# Nodesync — đồng bộ runner theo thứ tự khởi động
+# NodeSync — SSH sync giữa CI runners
 
-Nodesync chỉ làm một việc: runner lên sau tự tìm runner sống đã lên trước trong
-Firebase RTDB rồi đồng bộ các file/folder được opt-in. Nó **không** restore
-Litestream, pull Rclone, chạy Tailscale/cloudflared riêng, hoặc chặn request qua
-Caddy.
+Runner khởi động sau chọn predecessor còn sống từ Firebase RTDB và đồng bộ các
+path đã opt-in. NodeSync tái sử dụng Tailscale/cloudflared hiện hữu; không chạy
+thêm tunnel daemon.
 
-## Mặc định an toàn
-
-```dotenv
-SSH_ENABLE=0
-NODESYNC_SYNC_PATHS=
-```
-
-`sync_paths` mặc định là `[]`. Khi danh sách rỗng, launcher không discover peer,
-không mở SSH và không chạy rsync. Để bật:
+## Tự động hóa SSH
 
 ```dotenv
 SSH_ENABLE=1
-NODESYNC_SYNC_PATHS=ci-data,uploads
+SSH_SYNC_PATHS=ci-data,uploads
+SSH_1_USER=nodesync
+SSH_1_PASS=<shared-secret>
+```
+
+CI chạy hoàn toàn non-interactive theo thứ tự:
+
+1. `npm run ssh:env --prefix nodesync`: chuẩn hóa `.env`, tự sinh user/password
+   khi thiếu, sinh Ed25519 key, gom và sắp xếp toàn bộ `SSH_*`, mask secrets;
+2. `npm run ssh:smoke:prepare --prefix nodesync`: tạo smoke fixture khi bật;
+3. `setup-users.mjs`: tạo mọi `SSH_<index>_USER`, password, home, `.ssh`,
+   `authorized_keys`, private key và sudo `NOPASSWD`;
+4. `setup-nodesync-ssh.mjs`: cài OpenSSH/rsync/sshpass, cấu hình sshd, host key,
+   identity file và manifest RTDB;
+5. discover predecessor, pin host key, verify remote node ID, rồi rsync.
+
+Key authentication được thử trước; `SSH_<index>_PASS` là fallback qua
+`sshpass -e`, nên password không nằm trong argv hay log. Không dùng
+`StrictHostKeyChecking=accept-new`.
+
+Các workflow tích hợp sẵn:
+
+- `.github/workflows/test.yml`;
+- `.azure/azure-pipelines.yml`.
+
+## Transports
+
+```dotenv
 SSH_CHANNEL_TAILSCALE_ENABLE=1
 SSH_CHANNEL_CLOUDFLARE_ENABLE=1
 SSH_CHANNEL_HYBRID_ENABLE=1
 ```
 
-Không có `node01`/`node02` cố định. `startedAt` RTDB quyết định vai trò:
-runner đầu tiên không có predecessor và skip; runner lên sau chọn node sống có
-`startedAt` nhỏ hơn, ưu tiên node `serving`, rồi node gần nó nhất.
+Chế độ thường dùng fallback theo thứ tự Tailscale → Cloudflare → Hybrid để tránh
+nhiều rsync ghi vào cùng destination. Mỗi endpoint vẫn phải khớp pinned host key
+và remote node ID.
 
-## Identity tự sinh
-
-`scripts/runners/setup-env.mjs` ghi vào runtime `.env`, không cần khai báo trong
-CI secret:
-
-- GitHub: `ORCH_NODE_ID=github-<GITHUB_RUN_ID>-<GITHUB_RUN_ATTEMPT>`;
-- Azure: `azure-<BUILD_BUILDID>-<SYSTEM_JOBATTEMPT>`;
-- local: `local-<hostname>-1`;
-- `WHOAMI_NAME` luôn được đặt bằng chính `ORCH_NODE_ID`.
-
-Có thể đặt `ORCH_NODE_ID` thủ công để debug; launcher vẫn ép `WHOAMI_NAME` khớp.
-Runtime `.env` và `ci-runtime/` đã gitignore.
-
-## SSH zero-touch trên CI runner
-
-`setup-nodesync-ssh.mjs` tự động:
-
-1. cài OpenSSH server và rsync bằng sudo non-interactive nếu thiếu;
-2. dùng user thật của runner;
-3. cài public key vào `authorized_keys`, tắt password và interactive auth;
-4. restart sshd;
-5. lấy host key/fingerprint, IP và node identity;
-6. ghi `ci-runtime/nodesync/host-ssh.json` để orchestrator publish lên RTDB.
-
-Để nhiều runner xác thực chéo, `ENV_FILE` phải chứa cùng một Ed25519 keypair:
+Cloudflare Access dùng tên chuẩn:
 
 ```dotenv
-SSH_1_PRIVATE_KEY_B64=1
-SSH_1_PRIVATE_KEY=<base64-private-key>
-SSH_1_PUBLIC_KEY_B64=1
-SSH_1_PUBLIC_KEY=<base64-public-key>
+CF_SSH_TUNNEL_SERVICE_TOKEN_ID=<client-id>
+CF_SSH_TUNNEL_SERVICE_TOKEN_SECRET=<client-secret>
 ```
 
-Nếu thiếu, bootstrap sinh key ephemeral chỉ phù hợp local/smoke một runner.
-Không có prompt, password hoặc `StrictHostKeyChecking=accept-new`.
+`cloudflare/scripts/provision-tunnel.mjs` có thể tạo cặp này qua Cloudflare API.
+Compose ánh xạ nội bộ sang tên biến mà `cloudflared access ssh` yêu cầu.
 
-Mọi channel phải qua ba lớp kiểm tra trước rsync:
+## Smoke sync
 
-1. endpoint resolve thành công;
-2. SSH host key khớp metadata RTDB (`StrictHostKeyChecking=yes`);
-3. remote identity file trả đúng predecessor `nodeId`.
-
-## Transport
-
-### Tailscale
-
-Dùng container `tailscale` hiện hữu, không chạy tailscaled trong nodesync.
-Vì stack dùng userspace networking và `--accept-dns=false`, resolver dùng IP từ
-`tailscale status --json`, không phụ thuộc `/etc/resolv.conf`/MagicDNS.
-Launcher cấu hình:
-
-```bash
-tailscale serve --bg --tcp=2222 tcp://host.docker.internal:22
+```dotenv
+SSH_SYNC_SMOKE_ENABLE=1
 ```
 
-SSH client đi qua SOCKS5 `tailscale:1055` tới `<source-tailnet-ip>:2222`.
-Peer phải online và IP phải thuộc chính predecessor trong RTDB.
+Runner tạo `ci-runtime/smoke-sync-data` gồm file, cây thư mục, timestamp và
+SHA-256 manifest. Các metadata sau được ghi vào env/RTDB:
 
-### Cloudflare
+- `ORCH_META_SSH_SMOKE_CREATED_AT`;
+- `ORCH_META_SSH_SMOKE_CHECKSUM`;
+- `ORCH_META_SSH_SMOKE_FILES`;
+- `ORCH_META_SSH_SMOKE_DIRS`.
 
-Provisioner tạo `ssh.<DOMAIN> → ssh://host.docker.internal:22`. Client tái sử
-dụng binary trong service `cloudflared` hiện hữu. Xem hướng dẫn chi tiết tại
-`docs/nodesync-verification.md`.
+Runner kế tiếp chạy mọi channel đã bật song song. Mỗi channel ghi vào destination
+riêng và lỗi độc lập:
 
-### Hybrid
+- dữ liệu: `ci-runtime/smoke-sync-results/<channel>/`;
+- report: `ci-runtime/nodesync/reports/<channel>.json`;
+- tổng hợp: `ci-runtime/nodesync/reports/summary.json`.
 
-Dùng IP host được source publish lên RTDB; vẫn pin host key và verify node ID.
+Report có source/current node, auth mode, endpoint, start/end/duration, danh sách
+file/thư mục, size, checksum từng file, checksum tổng và kết quả xác minh với
+manifest nguồn. Task chỉ fail khi không channel nào thành công.
 
-## Luồng startup
+## Mặc định an toàn
 
-Các bước restore/pull vẫn thuộc Litestream/Rclone và chạy độc lập. Phần nodesync:
-
-```text
-bootstrap host ssh → start transport/orchestrator/nodesync
-→ register RTDB → discover predecessor → authenticate → rsync configured paths
+```dotenv
+SSH_ENABLE=0
+SSH_SYNC_SMOKE_ENABLE=0
+SSH_SYNC_PATHS=
 ```
+
+Khi tắt hoặc path rỗng, NodeSync không discover, không SSH và không rsync.
