@@ -1,0 +1,170 @@
+#!/usr/bin/env node
+// tailscale/scripts/publish.mjs
+// Publish stack apps over the tailnet — chạy SAU khi `docker compose up`.
+// up.mjs / start-stack.mjs chỉ gọi 1 dòng: `node tailscale/scripts/publish.mjs`.
+//
+// Điều khiển hoàn toàn qua env (prefix TS_):
+//   TS_PUBLISH_MODE       off | serve | services | both   (default: off)
+//   TS_SERVE_STYLE        subdomain | path                (Cách A, default: subdomain)
+//   TS_SERVICES_AUTOAPPROVE  1|0                          (Cách B, default: 1)
+//   TS_TAILNET            <tailnet>.ts.net
+//   TS_HOSTNAME           tên node (cho serveStyle=path)
+//   TS_SERVE_JSON_PATH    (default tailscale/serve.json)
+//
+// AN TOÀN: script này KHÔNG BAO GIỜ chạm tới TCP 2222 (SSH sync forward) và
+// KHÔNG BAO GIỜ gọi `tailscale serve clear` không scope. Cách A ghi lại
+// serve.json (luôn kèm TCP 443 + 2222). Cách B chỉ advertise scope `svc:`.
+// Mọi lỗi được nuốt + log — publish thất bại KHÔNG làm gãy stack/sync.
+//
+// Usage:
+//   node tailscale/scripts/publish.mjs [--env path] [--dry-run] [--silent]
+import { execSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { parse } from "jsonc-parser";
+import { parseEnv } from "../../scripts/lib/env-utils.mjs";
+import { detectDocker } from "../../scripts/runners/_docker.mjs";
+import {
+  buildAdvertiseCommands,
+  buildServeConfig,
+  resolvePublishConfig,
+  SSH_FORWARD_PORT,
+} from "./lib/publish-lib.mjs";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(__dirname, "../..");
+const CONFIG_FILE = resolve(__dirname, "init.jsonc");
+
+const args = process.argv.slice(2);
+const DRY_RUN = args.includes("--dry-run");
+const SILENT = args.includes("--silent");
+const envIdx = args.indexOf("--env");
+const ENV_FILE = envIdx !== -1 ? resolve(args[envIdx + 1]) : resolve(ROOT, ".env");
+const log = (...a) => { if (!SILENT) console.log(...a); };
+const warn = (...a) => { if (!SILENT) console.warn(...a); };
+
+function loadServices() {
+  const defaults = [{ name: "whoami", upstream: "http://whoami:80" }];
+  if (!existsSync(CONFIG_FILE)) return defaults;
+  const cfg = parse(readFileSync(CONFIG_FILE, "utf8")) || {};
+  return Array.isArray(cfg.services) && cfg.services.length ? cfg.services : defaults;
+}
+
+/** Chạy 1 lệnh docker, trả {ok, out}. Không throw. */
+function dockerExec(subcmd, { capture = false } = {}) {
+  if (DRY_RUN) { log(`[DRY RUN] docker ${subcmd}`); return { ok: true, out: "" }; }
+  const docker = detectDocker();
+  if (!docker.available) return { ok: false, out: "Docker unavailable" };
+  const full = `${docker.cmd} ${subcmd}`;
+  try {
+    const out = execSync(full, { cwd: ROOT, encoding: "utf8", stdio: capture ? ["ignore", "pipe", "pipe"] : "inherit" });
+    return { ok: true, out: capture ? String(out || "").trim() : "" };
+  } catch (e) {
+    return { ok: false, out: e.stderr ? String(e.stderr) : e.message };
+  }
+}
+
+/** Tailscale đã online chưa (best-effort, không throw). */
+function waitTailscaleOnline(timeoutMs = 60_000) {
+  if (DRY_RUN) { log("[DRY RUN] chờ tailscale online"); return true; }
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const { ok, out } = dockerExec("compose exec -T tailscale tailscale status --json", { capture: true });
+    if (ok && out) {
+      try {
+        const st = JSON.parse(out);
+        if (st?.Self?.Online || st?.BackendState === "Running") return true;
+      } catch {}
+    }
+    execSyncSleep(2000);
+  }
+  return false;
+}
+
+function execSyncSleep(ms) {
+  // sleep đồng bộ đơn giản (script one-shot, không cần async).
+  const shared = new Int32Array(new SharedArrayBuffer(4));
+  Atomics.wait(shared, 0, 0, ms);
+}
+
+// ── Cách A: viết serve.json (init.mjs cũng viết file này; ở đây bảo đảm runtime
+//    khớp mode hiện tại). Container có :ro mount, nên chỉ đổi file trên host là đủ
+//    khi init đã chạy — nhưng để publish độc lập, ta chỉ REBUILD khi cần và log.
+function applyServe(services, cfg) {
+  const servePath = resolve(ROOT, ENV.TS_SERVE_JSON_PATH || "tailscale/serve.json");
+  const next = buildServeConfig(services, cfg);
+  // sanity: TCP 2222 phải còn (bất biến an toàn).
+  if (!next.TCP || !next.TCP[SSH_FORWARD_PORT]) {
+    warn("REFUSING serve write: TCP 2222 (SSH forward) bị thiếu — bỏ qua để bảo vệ nodesync.");
+    return;
+  }
+  const current = existsSync(servePath) ? readFileSync(servePath, "utf8") : "";
+  const eol = current.includes("\r\n") ? "\r\n" : "\n";
+  const rendered = `${JSON.stringify(next, null, 2)}${eol}`;
+  if (current === rendered) { log(`[serve] serve.json đã khớp (style=${cfg.serveStyle}).`); return; }
+  if (DRY_RUN) { log(`[serve] [DRY RUN] sẽ ghi ${servePath} (style=${cfg.serveStyle}, ${Object.keys(next.Web).length} web host).`); return; }
+  mkdirSync(dirname(servePath), { recursive: true });
+  writeFileSync(servePath, rendered, "utf8");
+  log(`[serve] serve.json updated (style=${cfg.serveStyle}, ${Object.keys(next.Web).length} web host).`);
+  // Nạp lại serve config trong container (đọc TS_SERVE_CONFIG). Best-effort.
+  const r = dockerExec("compose restart tailscale");
+  if (!r.ok) warn(`[serve] restart tailscale để nạp serve.json thất bại: ${r.out.split("\n")[0]}`);
+}
+
+// ── Cách B: advertise từng svc: qua CLI. KHÔNG đụng 2222.
+function applyServices(services, cfg) {
+  const cmds = buildAdvertiseCommands(services, cfg);
+  if (!cmds.length) { log("[services] không có service để advertise."); return; }
+  const online = waitTailscaleOnline();
+  if (!online && !DRY_RUN) {
+    warn("[services] Tailscale chưa online sau 60s — bỏ qua advertise (stack/sync không bị ảnh hưởng).");
+    return;
+  }
+  let okCount = 0;
+  for (const cmd of cmds) {
+    const sub = `compose exec -T tailscale tailscale ${cmd.argv.join(" ")}`;
+    const r = dockerExec(sub, { capture: true });
+    if (r.ok) {
+      okCount += 1;
+      const pending = /approval from an admin is required/i.test(r.out);
+      log(`[services] advertised ${cmd.service} → ${cmd.upstream}${pending ? " (⏳ chờ auto-approve từ ACL)" : " ✓"}`);
+    } else {
+      warn(`[services] advertise ${cmd.service} thất bại: ${r.out.split("\n")[0]}`);
+    }
+  }
+  log(`[services] advertise xong: ${okCount}/${cmds.length}. DNS: https://<name>.${cfg.tailnet || "<tailnet>"}/`);
+  if (cfg.autoApprove) {
+    log("[services] autoApprovers.services đã (hoặc sẽ) được init.mjs ghi vào ACL — chạy `npm run ts-init` nếu chưa.");
+  } else {
+    warn("[services] TS_SERVICES_AUTOAPPROVE=0 → service có thể kẹt 'pending approval'; duyệt thủ công trong admin console.");
+  }
+}
+
+let ENV = {};
+function main() {
+  ENV = { ...parseEnv(ENV_FILE), ...process.env };
+  const cfg = resolvePublishConfig(ENV);
+  for (const w of cfg.warnings) warn(`WARN: ${w}`);
+
+  log(`=== Tailscale Publish${DRY_RUN ? " (DRY RUN)" : ""} — mode=${cfg.mode} ===`);
+  if (cfg.mode === "off") {
+    log("TS_PUBLISH_MODE=off → không publish app. Giữ nguyên serve.json/ACL hiện tại. (SSH 2222 không bị đụng.)");
+    return;
+  }
+
+  const services = loadServices();
+  log(`Services: ${services.map((s) => s.name).join(", ")}`);
+
+  if (cfg.doServe) applyServe(services, cfg);
+  if (cfg.doServices) applyServices(services, cfg);
+
+  log("Publish hoàn tất.");
+}
+
+try {
+  main();
+} catch (e) {
+  // Bất biến: publish KHÔNG được làm gãy stack. Log rồi thoát 0.
+  warn(`WARN: publish gặp lỗi nhưng bỏ qua để không ảnh hưởng stack/sync: ${e.message}`);
+}

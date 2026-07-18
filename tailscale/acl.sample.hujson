@@ -1,4 +1,5 @@
 {
+  // grants: full mesh (mọi node ↔ mọi node) — nodesync SSH sync phụ thuộc điều này.
   "grants": [
     {
       "src": [
@@ -27,6 +28,11 @@
       ]
     }
   ],
+  // autoApprovers.services: TỰ ĐỘNG chèn bởi tailscale/scripts/init.mjs khi
+  // TS_PUBLISH_MODE=services|both và TS_SERVICES_AUTOAPPROVE=1. Approvers = các
+  // TS_TAGS của node (vd tag:container) để service `svc:<name>` không kẹt
+  // "pending approval". Ví dụ sau khi init render:
+  //   "autoApprovers": { "services": { "svc:whoami": ["tag:container"] } }
   "tagOwners": {
     "tag:ci": [
       "autogroup:admin"

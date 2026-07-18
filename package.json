@@ -28,7 +28,10 @@
     "tunnel:delete-connections": "node cloudflare/scripts/provision-tunnel.mjs --env .env.dockercaddytailscaletinyauth --delete-connections",
     "ts-status": "node tailscale/scripts/status.mjs",
     "ts-init": "node tailscale/scripts/init.mjs --env .env.dockercaddytailscaletinyauth",
-    "ts-init:dry": "node tailscale/scripts/init.mjs --env .env.dockercaddytailscaletinyauth --dry-run"
+    "ts-init:dry": "node tailscale/scripts/init.mjs --env .env.dockercaddytailscaletinyauth --dry-run",
+    "ts-publish": "node tailscale/scripts/publish.mjs --env .env.dockercaddytailscaletinyauth",
+    "ts-publish:dry": "node tailscale/scripts/publish.mjs --env .env.dockercaddytailscaletinyauth --dry-run",
+    "ts-test": "node --test tailscale/test/*.test.mjs"
   },
   "devDependencies": {
     "bcryptjs": "^2.4.3",

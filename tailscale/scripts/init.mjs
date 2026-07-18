@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 import { parse } from "jsonc-parser";
 import { parseEnv } from "../../scripts/lib/env-utils.mjs";
+import { buildServeConfig, mergeServiceAutoApprovers, resolvePublishConfig } from "./lib/publish-lib.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "../..");
@@ -49,14 +50,12 @@ function isDomain(value) {
   return /^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/.test(value || "");
 }
 
-function renderServe(services, tailnet, eol = "\n") {
-  const web = {};
-  for (const svc of services) {
-    for (const name of unique([svc.name, ...(svc.names || [])].filter(Boolean))) {
-      web[`${name}.${tailnet}:443`] = { Handlers: { "/": { Proxy: svc.upstream } } };
-    }
-  }
-  return `${JSON.stringify({ TCP: { 443: { HTTPS: true }, 2222: { TCPForward: "host.docker.internal:22" } }, Web: web }, null, 2)}${eol}`;
+function renderServe(services, tailnet, publishCfg, eol = "\n") {
+  // Delegate to shared lib. TCP 443 (HTTPS) + 2222 (SSH forward) luôn có mặt;
+  // Web{} chỉ được điền khi publishCfg.doServe (Cách A). Bất biến an toàn giữ
+  // ở publish-lib.buildServeConfig.
+  const cfg = { ...publishCfg, tailnet: tailnet || publishCfg.tailnet || "example.ts.net" };
+  return `${JSON.stringify(buildServeConfig(services, cfg), null, 2)}${eol}`;
 }
 
 function mergeTagOwners(policy, requiredTags, owners) {
@@ -137,6 +136,8 @@ async function main() {
   const tags = unique(tagsRaw.filter(isTag));
   const badTags = unique(tagsRaw.filter((tag) => !isTag(tag)));
   const owners = unique(csv(env.TS_TAG_OWNERS || "autogroup:admin"));
+  const publishCfg = resolvePublishConfig(env);
+  for (const w of publishCfg.warnings) log(`Warning: ${w}`);
   const servePath = resolve(ROOT, env.TS_SERVE_JSON_PATH || "tailscale/serve.json");
   const aclSamplePath = resolve(ROOT, env.TS_ACL_SAMPLE_PATH || "tailscale/acl.sample.hujson");
   const aclPath = resolve(ROOT, env.TS_ACL_JSON_PATH || "tailscale/acl.hujson");
@@ -158,7 +159,9 @@ async function main() {
   log(`Serve file:   ${servePath}`);
   log(`ACL sample:   ${aclSamplePath}`);
   log(`ACL file:     ${aclPath}`);
-  log(`Routes:       ${services.flatMap((s) => unique([s.name, ...(s.names || [])].filter(Boolean)).map((name) => `${name}.${tailnet || "TS_TAILNET"} -> ${s.upstream}`)).join(", ")}`);
+  log(`Publish mode: ${publishCfg.mode}${publishCfg.doServe ? ` (serve style=${publishCfg.serveStyle})` : ""}${publishCfg.doServices ? ` (services autoApprove=${publishCfg.autoApprove ? "on" : "off"})` : ""}`);
+  if (publishCfg.doServe) log(`Serve routes: ${services.flatMap((s) => unique([s.name, ...(s.names || [])].filter(Boolean)).map((name) => publishCfg.serveStyle === "path" ? `${publishCfg.nodeHost}.${tailnet || "TS_TAILNET"}/${name} -> ${s.upstream}` : `${name}.${tailnet || "TS_TAILNET"} -> ${s.upstream}`)).join(", ")}`);
+  else log("Serve routes: (Cách A tắt — serve.json chỉ có TCP 443 + 2222)");
   if (badTags.length) log(`Warning: ignoring invalid TS_TAGS: ${badTags.join(", ")}`);
 
   const envWrites = [];
@@ -176,10 +179,13 @@ async function main() {
 
   const serveCurrent = existsSync(servePath) ? readFileSync(servePath, "utf8") : "";
   const serveEol = serveCurrent.includes("\r\n") ? "\r\n" : "\n";
-  const serveNext = renderServe(services, tailnet || "example.ts.net", serveEol);
+  const serveNext = renderServe(services, tailnet || "example.ts.net", publishCfg, serveEol);
   const serveChanged = serveCurrent !== serveNext;
   const aclSample = existsSync(aclSamplePath) ? parse(readFileSync(aclSamplePath, "utf8")) : {};
-  const aclNextPolicy = existsSync(aclSamplePath) ? mergeTagOwners(aclSample, tags, owners).nextPolicy : {};
+  // 1) tagOwners cho tag đang advertise. 2) autoApprovers.services (Cách B) để
+  //    node tự duyệt service — approvers = chính các tag host.
+  const aclWithTags = existsSync(aclSamplePath) ? mergeTagOwners(aclSample, tags, owners).nextPolicy : {};
+  const aclNextPolicy = mergeServiceAutoApprovers(aclWithTags, services, publishCfg, tags).nextPolicy;
   const aclNext = `${JSON.stringify(aclNextPolicy, null, 2)}\n`;
   const aclCurrent = existsSync(aclPath) ? readFileSync(aclPath, "utf8") : "";
   const aclChanged = aclCurrent !== aclNext;

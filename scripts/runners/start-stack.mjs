@@ -332,6 +332,23 @@ if (MODE === "named") {
 
 run(dc("compose ps"));
 
+// Publish stack apps qua tailnet (Cách A/B theo TS_PUBLISH_MODE). Tách hẳn ra
+// tailscale/scripts/publish.mjs — start-stack.mjs chỉ gọi 1 dòng. No-op khi
+// TS_PUBLISH_MODE=off; publish.mjs tự nuốt lỗi (KHÔNG làm gãy stack / SSH 2222).
+{
+  const activeProfiles = process.env.COMPOSE_PROFILES || envGet(envFile, "COMPOSE_PROFILES") || "";
+  const tailscaleActive = /(^|[,\s])(tailscale|full)([,\s]|$)/.test(activeProfiles);
+  const publishMode = (process.env.TS_PUBLISH_MODE || envGet(envFile, "TS_PUBLISH_MODE") || "off").toLowerCase();
+  if (tailscaleActive && publishMode !== "off") {
+    log(`Publishing apps over tailnet (TS_PUBLISH_MODE=${publishMode})...`);
+    try {
+      run(`node tailscale/scripts/publish.mjs${DRY_RUN ? " --dry-run" : ""}${SILENT ? " --silent" : ""}`);
+    } catch (e) {
+      log(`WARN: publish qua tailnet lỗi nhưng bỏ qua để không ảnh hưởng stack: ${e.message}`);
+    }
+  }
+}
+
 if (DRY_RUN) {
   log("[DRY RUN] Would check cloudflared is running after 3s");
   process.exit(0);

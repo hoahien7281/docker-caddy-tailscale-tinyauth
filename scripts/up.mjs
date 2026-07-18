@@ -317,6 +317,23 @@ if (mode === "ci") {
 }
 
 run(dc("compose ps"));
+
+// Publish stack apps qua tailnet (Cách A/B theo TS_PUBLISH_MODE). Tách hẳn ra
+// tailscale/scripts/publish.mjs — up.mjs chỉ gọi 1 dòng. Chỉ chạy khi profile
+// tailscale đang bật; publish.mjs tự no-op khi TS_PUBLISH_MODE=off và tự nuốt
+// lỗi (KHÔNG làm gãy stack / SSH sync 2222).
+const activeProfiles = process.env.COMPOSE_PROFILES || envGet(ENV, "COMPOSE_PROFILES") || "";
+const tailscaleActive = /(^|[,\s])(tailscale|full)([,\s]|$)/.test(activeProfiles);
+const publishMode = (process.env.TS_PUBLISH_MODE || envGet(ENV, "TS_PUBLISH_MODE") || "off").toLowerCase();
+if (tailscaleActive && publishMode !== "off") {
+  log(`Publishing apps over tailnet (TS_PUBLISH_MODE=${publishMode})...`);
+  try {
+    run(`node tailscale/scripts/publish.mjs${DRY_RUN ? " --dry-run" : ""}${SILENT ? " --silent" : ""}`);
+  } catch (e) {
+    log(`WARN: publish qua tailnet lỗi nhưng bỏ qua để không ảnh hưởng stack: ${e.message}`);
+  }
+}
+
 log("");
 log("Active profiles tip: echo $COMPOSE_PROFILES or check .env");
 if (hasLitestreamConfig() || hasRcloneConfig()) log("Optional profiles were auto-enabled from indexed env blocks.");
