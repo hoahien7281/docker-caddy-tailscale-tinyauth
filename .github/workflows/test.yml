@@ -9,7 +9,7 @@ on:
       keep_alive_minutes:
         description: "Keep the stack up after the smoke test passes (minutes, 0 = off)"
         required: false
-        default: "5"
+        default: "50"
       keep_alive_interval:
         description: "Heartbeat log interval while kept alive (seconds)"
         required: false
@@ -139,7 +139,7 @@ jobs:
       - name: Keep-alive heartbeat
         if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.keep_alive_minutes != '0')
         env:
-          KEEP_MIN: ${{ github.event.inputs.keep_alive_minutes || '5' }}
+          KEEP_MIN: ${{ github.event.inputs.keep_alive_minutes || '50' }}
           KEEP_INTERVAL_SECONDS: ${{ github.event.inputs.keep_alive_interval || '30' }}
         run: node scripts/runners/keep-alive.mjs
 
