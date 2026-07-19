@@ -7,55 +7,5 @@
       "TCPForward": "host.docker.internal:22"
     }
   },
-  "Web": {
-    "auth.tailaa8079.ts.net:443": {
-      "Handlers": {
-        "/": {
-          "Proxy": "http://tinyauth:3000"
-        }
-      }
-    },
-    "files.tailaa8079.ts.net:443": {
-      "Handlers": {
-        "/": {
-          "Proxy": "http://filebrowser:80"
-        }
-      }
-    },
-    "webssh.tailaa8079.ts.net:443": {
-      "Handlers": {
-        "/": {
-          "Proxy": "http://webssh:7681"
-        }
-      }
-    },
-    "ttyd.tailaa8079.ts.net:443": {
-      "Handlers": {
-        "/": {
-          "Proxy": "http://webssh:7681"
-        }
-      }
-    },
-    "dozzle.tailaa8079.ts.net:443": {
-      "Handlers": {
-        "/": {
-          "Proxy": "http://dozzle:8080"
-        }
-      }
-    },
-    "logs.tailaa8079.ts.net:443": {
-      "Handlers": {
-        "/": {
-          "Proxy": "http://dozzle:8080"
-        }
-      }
-    },
-    "whoami.tailaa8079.ts.net:443": {
-      "Handlers": {
-        "/": {
-          "Proxy": "http://whoami:80"
-        }
-      }
-    }
-  }
+  "Web": {}
 }
