@@ -46,9 +46,19 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: P1 Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
+
+      - name: P1 Setup Node with cache
+        uses: actions/setup-node@v7
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            nodesync/package-lock.json
+            orchestrator/package-lock.json
 
       - name: P1 Install dependencies and tools
         run: |
@@ -60,7 +70,7 @@ jobs:
           echo "P1 end $(date -u +%FT%T.%3NZ)"
 
       - name: P2 Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: P2 Build images with BuildKit cache
         env:
@@ -131,7 +141,7 @@ jobs:
 
       - name: P8 Upload logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: stack-logs-${{ github.run_id }}-${{ github.run_attempt }}
           path: ci-logs/

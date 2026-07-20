@@ -100,3 +100,4 @@ coverage/
 .opushforce.message
 .opencode-prompt.md
 .env.dockercaddytailscaletinyauth
+opencode.json
