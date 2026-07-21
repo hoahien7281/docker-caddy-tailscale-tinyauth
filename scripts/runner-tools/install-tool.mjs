@@ -192,6 +192,9 @@ function installTool(tool) {
           continue;
         }
 
+        // Ensure binary is executable
+        shell(`chmod +x ${JSON.stringify(binaryPath)}`);
+
         log(`installed to ${binaryPath}`);
         applyPathAdd([cacheDir]);
         attempts.push(`${m.id}=ran`);
