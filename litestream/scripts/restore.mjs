@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Restore Litestream DBs before app containers start. Missing remote backups are OK.
 // Runs all LITESTREAM_<index>_* restores concurrently (independent DBs/buckets).
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { availableParallelism, cpus } from "node:os";
 import { dirname, resolve } from "node:path";
@@ -51,6 +51,39 @@ function isMissingRemote(output) {
   return /no matching backup|no such key|not found|does not exist|replica.*not.*found|NoSuchKey|404/i.test(output);
 }
 
+// Resolve litestream binary: PATH → cache → install-tool → null (fallback Docker).
+async function resolveLitestream(config) {
+  // 1. Check PATH
+  const w = spawnSync("which", ["litestream"], { encoding: "utf8", shell: true });
+  if (w.status === 0 && w.stdout.trim()) {
+    log(`Litestream binary found in PATH: ${w.stdout.trim()}`);
+    return w.stdout.trim();
+  }
+
+  // 2. Check cache directory
+  const platform = `${process.platform}-${process.arch}`;
+  const version = config.image.split(":").pop() || "0.3.13";
+  const cachePath = resolve(ROOT, "scripts/runner-tools/.cache/litestream", version, platform, "litestream");
+  if (existsSync(cachePath)) {
+    log(`Litestream binary found in cache: ${cachePath}`);
+    return cachePath;
+  }
+
+  // 3. Run install-tool.mjs to download and cache
+  const installScript = resolve(ROOT, "scripts/runner-tools/install-tool.mjs");
+  if (existsSync(installScript)) {
+    log("Litestream binary not found, installing via install-tool.mjs...");
+    const { code } = await run(`node ${shQuote(installScript)} litestream --silent`);
+    if (code === 0 && existsSync(cachePath)) {
+      log(`Litestream binary installed to cache: ${cachePath}`);
+      return cachePath;
+    }
+  }
+
+  // 4. Fallback: null → use Docker
+  return null;
+}
+
 // Run a shell command async, capture stdout/stderr, never throw — caller inspects .code.
 function run(cmd) {
   return new Promise((res) => {
@@ -91,15 +124,18 @@ async function main() {
     return;
   }
 
+  // Resolve litestream binary: PATH → cache → install-tool → null (Docker fallback)
+  const binary = DRY_RUN ? "/usr/bin/litestream" : await resolveLitestream(config);
+
   const docker = DRY_RUN ? { available: true, cmd: "docker" } : detectDocker();
-  if (!docker.available) {
-    console.error("ERROR: Docker not found. Cannot run litestream restore.");
+  if (!binary && !docker.available) {
+    console.error("ERROR: Neither litestream binary nor Docker found. Cannot run litestream restore.");
     process.exit(1);
   }
 
   if (!DRY_RUN) mkdirSync(dataRoot, { recursive: true });
 
-  log(`Litestream restore: ${items.length} db(s), concurrency=${CONCURRENCY === Infinity ? items.length : CONCURRENCY}`);
+  log(`Litestream restore: ${items.length} db(s), concurrency=${CONCURRENCY === Infinity ? items.length : CONCURRENCY}${binary ? " [binary]" : " [docker]"}`);
 
   const results = await mapLimit(items, CONCURRENCY, async (item) => {
     const localPath = resolve(dataRoot, item.path.replace(/^\/data\//, ""));
@@ -109,7 +145,14 @@ async function main() {
       return { service: item.service, ok: true };
     }
 
-    const cmd = `${docker.cmd} run --rm -v ${shQuote(dataRoot)}:/data -v ${shQuote(runtimeConfig)}:/etc/litestream.yml:ro ${shQuote(image)} restore -if-db-not-exists -if-replica-exists -config /etc/litestream.yml ${shQuote(item.path)}`;
+    let cmd;
+    if (binary) {
+      // Run directly on host — use localPath (host path) instead of item.path (container path)
+      cmd = `${shQuote(binary)} restore -if-db-not-exists -if-replica-exists -config ${shQuote(runtimeConfig)} ${shQuote(localPath)}`;
+    } else {
+      // Fallback Docker
+      cmd = `${docker.cmd} run --rm -v ${shQuote(dataRoot)}:/data -v ${shQuote(runtimeConfig)}:/etc/litestream.yml:ro ${shQuote(image)} restore -if-db-not-exists -if-replica-exists -config /etc/litestream.yml ${shQuote(item.path)}`;
+    }
     if (DRY_RUN) {
       log(`[DRY RUN] ${cmd}`);
       return { service: item.service, ok: true };

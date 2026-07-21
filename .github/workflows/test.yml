@@ -60,6 +60,14 @@ jobs:
             nodesync/package-lock.json
             orchestrator/package-lock.json
 
+      - name: Cache runner tools
+        uses: actions/cache@v5
+        with:
+          path: scripts/runner-tools/.cache
+          key: runner-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/runner-tools/tools-config.jsonc') }}
+          restore-keys: |
+            runner-tools-${{ runner.os }}-${{ runner.arch }}-
+
       - name: P1 Install dependencies and tools
         run: |
           echo "P1 start $(date -u +%FT%T.%3NZ)"

@@ -43,6 +43,28 @@
           "run": "brew install anomalyco/tap/opencode || brew install opencode"
         }
       ]
+    },
+    {
+      "name": "litestream",
+      "version": "0.3.13",
+      "verify": "litestream --version",
+      "methods": [
+        {
+          "id": "binary-download",
+          "type": "download",
+          "url": {
+            "linux-x64": "https://github.com/benbjohnson/litestream/releases/download/v${version}/litestream-${version}-linux-amd64.tar.gz",
+            "darwin-x64": "https://github.com/benbjohnson/litestream/releases/download/v${version}/litestream-${version}-darwin-amd64.tar.gz",
+            "darwin-arm64": "https://github.com/benbjohnson/litestream/releases/download/v${version}/litestream-${version}-darwin-arm64.tar.gz"
+          },
+          "binary": "litestream"
+        },
+        {
+          "id": "brew",
+          "needs": "brew",
+          "run": "brew install litestream"
+        }
+      ]
     }
   ]
 }

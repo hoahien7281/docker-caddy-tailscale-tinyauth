@@ -45,6 +45,8 @@ node scripts/runner-tools/install-tool.mjs opencode --timeout=600
 
 Thêm một entry vào `tools-config.jsonc`:
 
+### Phương thức bash -lc (npm, brew, curl)
+
 ```jsonc
 {
   "name": "mytool",
@@ -58,6 +60,40 @@ Thêm một entry vào `tools-config.jsonc`:
   ]
 }
 ```
+
+### Phương thức download (tải binary trực tiếp, cache theo version)
+
+```jsonc
+{
+  "name": "litestream",
+  "version": "0.3.13",
+  "verify": "litestream --version",
+  "methods": [
+    {
+      "id": "binary-download",
+      "type": "download",
+      "url": {
+        "linux-x64": "https://github.com/.../litestream-${version}-linux-amd64.tar.gz",
+        "darwin-x64": "https://github.com/.../litestream-${version}-darwin-amd64.tar.gz",
+        "darwin-arm64": "https://github.com/.../litestream-${version}-darwin-arm64.tar.gz"
+      },
+      "binary": "litestream"
+    },
+    {
+      "id": "brew",
+      "needs": "brew",
+      "run": "brew install litestream"
+    }
+  ]
+}
+```
+
+**Lưu ý cho `type: "download"`:**
+- `version`: phiên bản tool (dùng trong URL template `${version}`)
+- `url`: object key = `${process.platform}-${process.arch}` (vd `linux-x64`, `darwin-arm64`)
+- `binary`: tên file binary sau khi extract
+- Cache location: `scripts/runner-tools/.cache/<name>/<version>/<platform>/`
+- CI cần cache directory `.cache/` giữa các run (xem workflow files)
 
 ## Tích hợp GitHub Actions
 

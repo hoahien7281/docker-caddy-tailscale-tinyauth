@@ -23,7 +23,7 @@
 //     so later workflow steps see the tool too.
 //   - Exits 0 only if the tool verifies; non-zero (and a summary) otherwise.
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, appendFileSync } from "node:fs";
+import { existsSync, readFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname, delimiter } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseJsonc } from "jsonc-parser";
@@ -142,6 +142,66 @@ function installTool(tool) {
       attempts.push(`${m.id}=skipped(no ${m.needs})`);
       continue;
     }
+
+    // ── type: "download" — binary download with version-based cache ──
+    if (m.type === "download") {
+      const platform = `${process.platform}-${process.arch}`;
+      const urlTemplate = typeof m.url === "object" ? m.url[platform] : m.url;
+      if (!urlTemplate) {
+        warn(`no download URL for platform ${platform}`);
+        attempts.push(`${m.id}=skipped(no URL for ${platform})`);
+        continue;
+      }
+
+      const version = tool.version || "latest";
+      const cacheDir = resolve(ROOT, "scripts/runner-tools/.cache", tool.name, version, platform);
+      const binaryPath = resolve(cacheDir, m.binary);
+
+      // Check cache
+      if (existsSync(binaryPath)) {
+        log(`cached: ${binaryPath}`);
+        applyPathAdd([cacheDir]);
+        attempts.push(`${m.id}=cached`);
+      } else {
+        if (DRY) { attempts.push(`${m.id}=dry-run`); continue; }
+
+        const url = urlTemplate.replace(/\$\{version\}/g, version);
+        mkdirSync(cacheDir, { recursive: true });
+        const tmpDir = resolve(ROOT, "ci-runtime", "tool-downloads");
+        mkdirSync(tmpDir, { recursive: true });
+        const archive = resolve(tmpDir, `${tool.name}-${version}.tar.gz`);
+
+        log(`downloading ${url}`);
+        const dl = shell(`curl -fsSL -o ${JSON.stringify(archive)} ${JSON.stringify(url)}`);
+        if (!dl.ok) {
+          warn(`download failed: ${dl.err}`);
+          attempts.push(`${m.id}=fail(download)`);
+          continue;
+        }
+
+        const ext = shell(`tar xzf ${JSON.stringify(archive)} -C ${JSON.stringify(cacheDir)} --strip-components=0`);
+        shell(`rm -f ${JSON.stringify(archive)}`);
+        if (!ext.ok) {
+          warn(`extract failed: ${ext.err}`);
+          attempts.push(`${m.id}=fail(extract)`);
+          continue;
+        }
+
+        log(`installed to ${binaryPath}`);
+        applyPathAdd([cacheDir]);
+        attempts.push(`${m.id}=ran`);
+      }
+
+      if (verifyTool(tool)) {
+        linkTool(tool);
+        log(`SUCCESS: "${tool.name}" installed via "${m.id}"`);
+        return { name: tool.name, ok: true, method: m.id };
+      }
+      warn(`"${tool.name}" not verified after "${m.id}" → next fallback`);
+      continue;
+    }
+
+    // ── default: bash -lc method ──
     log(`try method "${m.id}": ${m.run}`);
     if (DRY) { attempts.push(`${m.id}=dry-run`); continue; }
 
