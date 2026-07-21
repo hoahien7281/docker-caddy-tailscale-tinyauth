@@ -67,7 +67,7 @@ Thêm một entry vào `tools-config.jsonc`:
 {
   "name": "litestream",
   "version": "0.3.13",
-  "verify": "litestream --version",
+  "verify": "litestream version",
   "methods": [
     {
       "id": "binary-download",

@@ -47,7 +47,8 @@
     {
       "name": "litestream",
       "version": "0.3.13",
-      "verify": "litestream --version",
+      // litestream uses a subcommand, not a flag: `litestream version` (not --version)
+      "verify": "litestream version",
       "methods": [
         {
           "id": "binary-download",

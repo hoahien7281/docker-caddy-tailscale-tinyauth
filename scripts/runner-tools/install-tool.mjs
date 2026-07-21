@@ -70,8 +70,17 @@ function commandExists(cmd) {
 }
 
 // Run a shell command in a login shell; return {ok, code, out, err, timedOut}.
+// bash -lc sources /etc/profile which overwrites PATH — re-export process PATH
+// so pathAdd / download-cache dirs survive verify after binary-download.
 function shell(cmd, { timeout = TIMEOUT } = {}) {
-  const r = spawnSync("bash", ["-lc", cmd], { encoding: "utf8", timeout, stdio: ["ignore", "pipe", "pipe"] });
+  const path = process.env.PATH || "";
+  const wrapped = `export PATH=${JSON.stringify(path)}; ${cmd}`;
+  const r = spawnSync("bash", ["-lc", wrapped], {
+    encoding: "utf8",
+    timeout,
+    stdio: ["ignore", "pipe", "pipe"],
+    env: process.env,
+  });
   const timedOut = r.error?.code === "ETIMEDOUT" || r.signal === "SIGTERM";
   return {
     ok: r.status === 0,
@@ -106,7 +115,11 @@ function verifyTool(tool) {
   if (!tool.verify) return true; // nothing to verify → assume ok
   if (DRY) { log(`[DRY RUN] verify: ${tool.verify}`); return false; }
   const r = shell(tool.verify, { timeout: 30000 });
-  if (r.ok) log(`verify OK: ${tool.verify}${r.out ? ` → ${r.out.split("\n")[0]}` : ""}`);
+  if (r.ok) {
+    log(`verify OK: ${tool.verify}${r.out ? ` → ${r.out.split("\n")[0]}` : ""}`);
+  } else {
+    warn(`verify failed: ${tool.verify} (code=${r.code}): ${(r.err || r.out || "").split("\n").slice(-3).join(" | ")}`);
+  }
   return r.ok;
 }
 function linkTool(tool) {
