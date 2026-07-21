@@ -13,7 +13,7 @@ import { execSync } from "node:child_process";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
-import { envGet, envHasKey, envKeys } from "../lib/env-utils.mjs";
+import { envGet, envHasKey, envKeys, parseEnv } from "../lib/env-utils.mjs";
 
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes("--dry-run");
@@ -34,9 +34,14 @@ function appendEnv(key, val) {
 }
 
 function showEnvKeys() {
-  const keys = envKeys(ENV);
+  const parsed = parseEnv(ENV);
+  const keys = Object.keys(parsed);
   log("--- .env keys ---");
-  keys.forEach((k) => log(k));
+  for (const k of keys) {
+    const v = parsed[k];
+    const masked = "*".repeat(v.length);
+    log(`env:${k} = ${masked} (${v.length} ký tự)`);
+  }
 }
 
 function envAppend(line) {
