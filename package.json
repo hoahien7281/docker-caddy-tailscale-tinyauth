@@ -36,7 +36,7 @@
     "ts-test": "node --test tailscale/test/*.test.mjs",
     "test": "node --test scripts/test/*.test.mjs tailscale/test/*.test.mjs",
     "bsr-hoahien7281": "oactiveWinCLI-no-window.exe spawn-browser --browser=thorium \"hoahien7281@gmail.com\" ",
-    "bsr-addakimanjose": "oactiveWinCLI-no-window.exe spawn-browser --browser=thorium \"addakimanjose@gmail.com\" ",
+    "bsr-addakimanjose": "oactiveWinCLI-no-window.exe spawn-browser --browser=catsxp \"addakimanjose@gmail.com\" ",
     "env-push": "dotenvrtdb -e .env.dockercaddytailscaletinyauth --push -eUrl=$env:DOTENVRTDB_URL"
   },
   "devDependencies": {
