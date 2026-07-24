@@ -118,9 +118,16 @@ async function main() {
     log(`tailscale CLI found: ${has.stdout.trim()}`);
   }
 
+  // Deduplicate EXTRA_ARGS: remove flags already built into the command to
+  // avoid "too many non-flag arguments" errors (e.g. duplicate --ssh).
+  const builtInFlags = ["--authkey", "--hostname", "--advertise-tags", "--ssh", "--accept-dns"];
+  const dedupedExtra = EXTRA_ARGS.split(/\s+/).filter((arg) => {
+    return !builtInFlags.some((f) => arg.startsWith(f));
+  }).join(" ");
+
   if (DRY_RUN) {
     log("[DRY RUN] Would exchange OAuth client for access token, mint authkey, then:");
-    log(`[DRY RUN] sudo tailscale up --authkey=<hidden> --hostname=${HOSTNAME} --advertise-tags=${TAGS} --ssh --accept-dns=false ${EXTRA_ARGS}`);
+    log(`[DRY RUN] sudo tailscale up --authkey=<hidden> --hostname=${HOSTNAME} --advertise-tags="${TAGS}" --ssh --accept-dns=false ${dedupedExtra}`);
     return;
   }
 
@@ -174,10 +181,10 @@ async function main() {
     "sudo tailscale up",
     `--authkey=${keyJson.key}`,
     `--hostname=${HOSTNAME}`,
-    `--advertise-tags=${TAGS}`,
+    `--advertise-tags="${TAGS}"`,
     "--ssh",
     "--accept-dns=false",
-    EXTRA_ARGS,
+    dedupedExtra,
   ]
     .filter(Boolean)
     .join(" ");
