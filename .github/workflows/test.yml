@@ -18,6 +18,10 @@ on:
         description: "Expected lifetime of this workflow before dispatch is allowed"
         required: false
         default: "58"
+      dispatched_by:
+        description: "Channel that triggered this run (e.g. self-dispatch:github, mark-start:cron-job.org)"
+        required: false
+        default: ""
 
 concurrency:
   group: ${{ github.event.inputs.run_group || format('{0}-{1}', github.workflow, github.ref_name) }}

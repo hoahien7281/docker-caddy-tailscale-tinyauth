@@ -153,7 +153,7 @@ async function githubJson(name, url, token, body) {
   });
 }
 
-function dispatchBody(ctx) {
+function dispatchBody(ctx, dispatchedBy = "") {
   const enabledRaw = env("CRONJOB_NEXT_RUN_ENABLE", env("CRONJON_NEXT_RUN_ENABLE"));
   return {
     ref: env("CRONJOB_REF", ctx.ref),
@@ -161,6 +161,7 @@ function dispatchBody(ctx) {
       run_group: env("CRONJOB_RUN_GROUP", ctx.runGroup),
       next_run_enable: String(boolDefaultTrue(enabledRaw)),
       next_run_minutes: String(num(env("CRONJOB_NEXT_RUN_MINUTES", env("CRONJON_NEXT_RUN_MINUTES")), config().next_run_minutes)),
+      dispatched_by: dispatchedBy,
     },
   };
 }
@@ -388,7 +389,7 @@ async function azureDispatchWithRetry(label, url, pat, body, varNames) {
   return res;
 }
 
-async function azureDispatch(ctx) {
+async function azureDispatch(ctx, dispatchedBy = "") {
   const pipelines = getAzurePipelines(ctx);
   const tz = env("CRONJOB_TZ", "Asia/Bangkok");
   const formatter = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hour12: false });
@@ -425,13 +426,14 @@ async function azureDispatch(ctx) {
     const runGroup = env("CRONJOB_RUN_GROUP", ctx.runGroup);
     const nextEnable = String(boolDefaultTrue(env("CRONJOB_NEXT_RUN_ENABLE", env("CRONJON_NEXT_RUN_ENABLE"))));
     const nextMinutes = String(num(env("CRONJOB_NEXT_RUN_MINUTES", env("CRONJON_NEXT_RUN_MINUTES")), config().next_run_minutes));
-    const varNames = ["CRONJOB_RUN_GROUP", "CRONJOB_NEXT_RUN_ENABLE", "CRONJOB_NEXT_RUN_MINUTES"];
+    const varNames = ["CRONJOB_RUN_GROUP", "CRONJOB_NEXT_RUN_ENABLE", "CRONJOB_NEXT_RUN_MINUTES", "CRONJOB_DISPATCHED_BY"];
     const body = {
       resources: {},
       variables: {
         CRONJOB_RUN_GROUP: { value: runGroup },
         CRONJOB_NEXT_RUN_ENABLE: { value: nextEnable },
         CRONJOB_NEXT_RUN_MINUTES: { value: nextMinutes },
+        CRONJOB_DISPATCHED_BY: { value: dispatchedBy },
       },
     };
 
@@ -449,10 +451,10 @@ async function azureDispatch(ctx) {
   return { ok: failed === 0, status: failed > 0 ? "error" : "success", text };
 }
 
-async function selfDispatch(ctx) {
+async function selfDispatch(ctx, dispatchedBy = "") {
   // Azure provider → only Azure dispatch (backward compat, avoids bad GitHub defaults)
   if (ctx.provider === "azure") {
-    return azureDispatch(ctx);
+    return azureDispatch(ctx, dispatchedBy);
   }
 
   const repos = getDispatchRepositories(ctx);
@@ -481,6 +483,7 @@ async function selfDispatch(ctx) {
         run_group: env("CRONJOB_RUN_GROUP", ctx.runGroup),
         next_run_enable: String(boolDefaultTrue(env("CRONJOB_NEXT_RUN_ENABLE", env("CRONJON_NEXT_RUN_ENABLE")))),
         next_run_minutes: String(num(env("CRONJOB_NEXT_RUN_MINUTES", env("CRONJON_NEXT_RUN_MINUTES")), config().next_run_minutes)),
+        dispatched_by: dispatchedBy,
       },
     };
     try {
@@ -496,7 +499,7 @@ async function selfDispatch(ctx) {
   const azurePipelines = getAzurePipelines(ctx);
   if (azurePipelines.length > 0) {
     log(`[self-dispatch] Azure pipelines configured, dispatching to ${azurePipelines.length} pipeline(s) on top of GitHub repos.`);
-    const azureResult = await azureDispatch(ctx);
+    const azureResult = await azureDispatch(ctx, dispatchedBy);
     if (azureResult.text) {
       try {
         const azureDispatches = JSON.parse(azureResult.text);
@@ -538,7 +541,7 @@ function azureOrgFromEnv() {
  * Trả về { url, authValue, body, headers, pat } để mỗi channel dùng.
  * Auth: GitHub → Bearer, Azure → Basic base64(:PAT) — user chỉ cần set raw PAT.
  */
-function externalTargetConfig(ctx) {
+function externalTargetConfig(ctx, dispatchedBy = "") {
   const azurePipelineId = env("CRONJOB_AZURE_PIPELINE_ID") || (ctx.provider === "azure" ? (process.env.SYSTEM_DEFINITIONID || "") : "") || "";
 
   // -- Azure target --
@@ -558,6 +561,7 @@ function externalTargetConfig(ctx) {
         CRONJOB_RUN_GROUP: { value: runGroup },
         CRONJOB_NEXT_RUN_ENABLE: { value: nextEnable },
         CRONJOB_NEXT_RUN_MINUTES: { value: nextMinutes },
+        CRONJOB_DISPATCHED_BY: { value: dispatchedBy },
       },
     };
     const headers = [`Authorization: ${authValue}`, "Content-Type: application/json"];
@@ -572,7 +576,7 @@ function externalTargetConfig(ctx) {
     type: "github",
     url: githubUrl(ctx),
     authValue,
-    body: dispatchBody(ctx),
+    body: dispatchBody(ctx, dispatchedBy),
     headers: [`Authorization: ${authValue}`, "Accept: application/vnd.github+json", `X-GitHub-Api-Version: ${v}`, "Content-Type: application/json"],
     pat,
   };
@@ -627,10 +631,10 @@ function getScheduleParts(nextRunAt, tz) {
  * - nextRunAt != null → one-shot (expiresAt + pinned fields) theo doc mới
  * - nextRunAt == null → fallback recurring (P7 retry)
  */
-async function ensureCronJobOrg(ctx, nextRunAt) {
+async function ensureCronJobOrg(ctx, nextRunAt, dispatchedBy = "") {
   if (!channelConfigured("CRONJOB_CRONJOBORG_ENABLE", ["CRONJOB_CRONJOBORG_API_KEY"])) return null;
   const apiKey = env("CRONJOB_CRONJOBORG_API_KEY");
-  const target = externalTargetConfig(ctx);
+  const target = externalTargetConfig(ctx, dispatchedBy);
   if (!apiKey || !target.pat) throw new Error("cron-job.org needs CRONJOB_CRONJOBORG_API_KEY and a dispatch PAT.");
   const tz = env("CRONJOB_TZ", "Asia/Bangkok");
 
@@ -694,10 +698,10 @@ async function ensureCronJobOrg(ctx, nextRunAt) {
  * - nextRunAt != null → pinned cron expression "M H D Mon *" (one-shot tháng này)
  * - nextRunAt == null → fallback cron expression từ config
  */
-async function ensureEasyCron(ctx, nextRunAt) {
+async function ensureEasyCron(ctx, nextRunAt, dispatchedBy = "") {
   if (!channelConfigured("CRONJOB_EASYCRON_ENABLE", ["CRONJOB_EASYCRON_API_KEY"])) return null;
   const apiKey = env("CRONJOB_EASYCRON_API_KEY");
-  const target = externalTargetConfig(ctx);
+  const target = externalTargetConfig(ctx, dispatchedBy);
   if (!apiKey) throw new Error("EasyCron needs CRONJOB_EASYCRON_API_KEY.");
   if (!target.pat) throw new Error("EasyCron needs a dispatch PAT (CRONJOB_DISPATCH_PAT / CRONJOB_DISPATCH_PAT_AZURE / GITHUB_TOKEN / SYSTEM_ACCESSTOKEN / AZURE_DEVOPS_PAT).");
   const cfg = config().channels.easycron;
@@ -734,10 +738,10 @@ async function ensureEasyCron(ctx, nextRunAt) {
  * - nextRunAt != null → pinned cron expression "M H D Mon *"
  * - nextRunAt == null → fallback expression từ config
  */
-async function ensureFastCron(ctx, nextRunAt) {
+async function ensureFastCron(ctx, nextRunAt, dispatchedBy = "") {
   if (!channelConfigured("CRONJOB_FASTCRON_ENABLE", ["CRONJOB_FASTCRON_TOKEN"])) return null;
   const token = env("CRONJOB_FASTCRON_TOKEN");
-  const target = externalTargetConfig(ctx);
+  const target = externalTargetConfig(ctx, dispatchedBy);
   if (!token) throw new Error("FastCron needs CRONJOB_FASTCRON_TOKEN.");
   if (!target.pat) throw new Error("FastCron needs a dispatch PAT (CRONJOB_DISPATCH_PAT / CRONJOB_DISPATCH_PAT_AZURE / GITHUB_TOKEN / SYSTEM_ACCESSTOKEN / AZURE_DEVOPS_PAT).");
   const cfg = config().channels.fastcron;
@@ -774,10 +778,10 @@ async function ensureFastCron(ctx, nextRunAt) {
  * - nextRunAt != null → one-shot publish với Upstash-Not-Before (Unix seconds)
  * - nextRunAt == null → fallback recurring schedule (P7 retry)
  */
-async function ensureQstash(ctx, nextRunAt) {
+async function ensureQstash(ctx, nextRunAt, dispatchedBy = "") {
   if (!channelConfigured("CRONJOB_QSTASH_ENABLE", ["CRONJOB_QSTASH_TOKEN"])) return null;
   const token = env("CRONJOB_QSTASH_TOKEN");
-  const target = externalTargetConfig(ctx);
+  const target = externalTargetConfig(ctx, dispatchedBy);
   if (!token || !target.pat) throw new Error("QStash needs CRONJOB_QSTASH_TOKEN and a dispatch PAT.");
   const destination = encodeURIComponent(target.url);
   const qstashBase = env("CRONJOB_QSTASH_API", "https://qstash.upstash.io");
@@ -817,12 +821,12 @@ async function ensureQstash(ctx, nextRunAt) {
 /**
  * Webhook: gửi kèm scheduled_at khi có nextRunAt để receiver biết thời điểm dự kiến.
  */
-async function callWebhook(ctx, nextRunAt) {
+async function callWebhook(ctx, nextRunAt, dispatchedBy = "") {
   if (!channelConfigured("CRONJOB_WEBHOOK_ENABLE", ["CRONJOB_WEBHOOK_URL"])) return null;
   const url = env("CRONJOB_WEBHOOK_URL");
   if (!url) throw new Error("Webhook needs CRONJOB_WEBHOOK_URL.");
   const token = env("CRONJOB_WEBHOOK_TOKEN");
-  const target = externalTargetConfig(ctx);
+  const target = externalTargetConfig(ctx, dispatchedBy);
   const payload = {
     target: { type: target.type, url: target.url },
     body: target.body,
@@ -890,11 +894,11 @@ async function markStart() {
   } else {
     showCronjobEnv();
     log("[mark-start] dispatching external channels for nextRunAt =", nextRunAt.toISOString());
-    await runChannel("cron-job.org", () => ensureCronJobOrg(ctx, nextRunAt), externalResults, "mark-start");
-    await runChannel("easycron", () => ensureEasyCron(ctx, nextRunAt), externalResults, "mark-start");
-    await runChannel("fastcron", () => ensureFastCron(ctx, nextRunAt), externalResults, "mark-start");
-    await runChannel("qstash", () => ensureQstash(ctx, nextRunAt), externalResults, "mark-start");
-    await runChannel("webhook", () => callWebhook(ctx, nextRunAt), externalResults, "mark-start");
+    await runChannel("cron-job.org", () => ensureCronJobOrg(ctx, nextRunAt, "mark-start:cron-job.org"), externalResults, "mark-start");
+    await runChannel("easycron", () => ensureEasyCron(ctx, nextRunAt, "mark-start:easycron"), externalResults, "mark-start");
+    await runChannel("fastcron", () => ensureFastCron(ctx, nextRunAt, "mark-start:fastcron"), externalResults, "mark-start");
+    await runChannel("qstash", () => ensureQstash(ctx, nextRunAt, "mark-start:qstash"), externalResults, "mark-start");
+    await runChannel("webhook", () => callWebhook(ctx, nextRunAt, "mark-start:webhook"), externalResults, "mark-start");
   }
 
   // Ghi dispatched.json để P7 biết channels nào đã ok
@@ -952,7 +956,7 @@ log("[plan]", {
   now: plan.now.toISOString(),
   allowedNow: plan.allowed,
   dryRun: DRY_RUN,
-  dispatchBody: dispatchBody(ctx),
+  dispatchBody: dispatchBody(ctx, "self-dispatch:github"),
 });
 
 // Đọc channels đã ok ở --mark-start để skip
@@ -972,7 +976,7 @@ if (ctx.provider === "local") {
   log("[next-run] not time yet; skip dispatch.");
 } else {
   // GitHub self-dispatch luôn chạy ở P7
-  await runChannel("github", () => selfDispatch(ctx), results, "self-dispatch");
+  await runChannel("github", () => selfDispatch(ctx, "self-dispatch:github"), results, "self-dispatch");
 
   // External channels: skip nếu đã ok ở mark-start
   const skipIfOk = (name, fn) => {
@@ -984,11 +988,11 @@ if (ctx.provider === "local") {
     return runChannel(name, fn, results, "self-dispatch");
   };
 
-  await skipIfOk("cron-job.org", () => ensureCronJobOrg(ctx, null));
-  await skipIfOk("easycron", () => ensureEasyCron(ctx, null));
-  await skipIfOk("fastcron", () => ensureFastCron(ctx, null));
-  await skipIfOk("qstash", () => ensureQstash(ctx, null));
-  await skipIfOk("webhook", () => callWebhook(ctx, null));
+  await skipIfOk("cron-job.org", () => ensureCronJobOrg(ctx, null, "self-dispatch:cron-job.org"));
+  await skipIfOk("easycron", () => ensureEasyCron(ctx, null, "self-dispatch:easycron"));
+  await skipIfOk("fastcron", () => ensureFastCron(ctx, null, "self-dispatch:fastcron"));
+  await skipIfOk("qstash", () => ensureQstash(ctx, null, "self-dispatch:qstash"));
+  await skipIfOk("webhook", () => callWebhook(ctx, null, "self-dispatch:webhook"));
 }
 
 const configured = results.filter((r) => r.configured);
